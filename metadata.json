@@ -1,0 +1,6 @@
+{
+  "name": "TautKilat — Shortlink & Analitik Real-time",
+  "description": "Platform pemotong tautan modern dengan slug kustom, QR code otomatis, analitik real-time, proteksi keamanan, Link-in-Bio tersinkronisasi, dan blueprint arsitektur lengkap.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

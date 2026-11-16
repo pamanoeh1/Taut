@@ -1,0 +1,22 @@
+<IfModule mod_rewrite.c>
+  RewriteEngine On
+
+  # Pass Authorization header to PHP (critical on InfinityFree / Apache CGI)
+  RewriteCond %{HTTP:Authorization} .
+  RewriteRule .* - [E=HTTP_AUTHORIZATION:%{HTTP:Authorization}]
+
+  # Protect internal JSON data directory from direct web access
+  RewriteRule ^api/data/ - [F,L]
+
+  # Route all API requests & shortlink redirects to PHP InfinityFree backend
+  RewriteRule ^api(/.*)?$ api/index.php [QSA,L]
+  RewriteRule ^s/([^/]+)/?$ api/index.php?__route=/s/$1 [QSA,L]
+
+  # Serve existing static files (assets, favicon, etc.) directly
+  RewriteCond %{REQUEST_FILENAME} -f [OR]
+  RewriteCond %{REQUEST_FILENAME} -d
+  RewriteRule ^ - [L]
+
+  # Route React SPA views (/u/handle, etc.) to index.html
+  RewriteRule ^ index.html [L]
+</IfModule>

@@ -1,0 +1,283 @@
+{
+  "links": [
+    {
+      "slug": "promo-desember",
+      "ownerId": "demo-workspace",
+      "targetUrl": "https://tokopedia.com/promo-akhir-tahun-elektronik",
+      "title": "Kampanye Promo Akhir Tahun 2026",
+      "redirectType": 302,
+      "isActive": true,
+      "hasPassword": false,
+      "passwordHash": "",
+      "expiresAt": "2026-12-31T12:39:42.212Z",
+      "safetyStatus": "safe",
+      "safetyReason": "Lolos skrining heuristik phishing, skema, dan domain.",
+      "clickCount": 419,
+      "createdAt": "2026-11-10T12:39:42.212Z",
+      "updatedAt": "2026-11-16T11:39:42.212Z",
+      "customDomain": "",
+      "linkType": "url"
+    },
+    {
+      "slug": "katalog-2026",
+      "ownerId": "demo-workspace",
+      "targetUrl": "https://developer.mozilla.org/en-US/docs/Web/HTTP",
+      "title": "Dokumentasi Katalog Produk & API",
+      "redirectType": 301,
+      "isActive": true,
+      "hasPassword": false,
+      "passwordHash": "",
+      "expiresAt": "",
+      "safetyStatus": "safe",
+      "safetyReason": "Lolos skrining heuristik phishing, skema, dan domain.",
+      "clickCount": 274,
+      "createdAt": "2026-11-11T12:39:42.212Z",
+      "updatedAt": "2026-11-16T10:39:42.212Z",
+      "customDomain": "",
+      "linkType": "url"
+    },
+    {
+      "slug": "vip-akses",
+      "ownerId": "demo-workspace",
+      "targetUrl": "https://nodejs.org/en/docs",
+      "title": "Dokumen Internal Tim (Terproteksi)",
+      "redirectType": 302,
+      "isActive": true,
+      "hasPassword": true,
+      "passwordHash": "541e984103d4099bb8383050c56d511e733d85e6ab889a1c363ced651762eee0",
+      "expiresAt": "2026-12-16T12:39:42.212Z",
+      "safetyStatus": "safe",
+      "safetyReason": "Lolos skrining heuristik phishing, skema, dan domain.",
+      "clickCount": 89,
+      "createdAt": "2026-11-12T12:39:42.212Z",
+      "updatedAt": "2026-11-16T09:39:42.212Z",
+      "customDomain": "",
+      "linkType": "url"
+    },
+    {
+      "slug": "event-jkt",
+      "ownerId": "demo-workspace",
+      "targetUrl": "https://react.dev/learn",
+      "title": "Registrasi Tech Meetup Jakarta",
+      "redirectType": 302,
+      "isActive": true,
+      "hasPassword": false,
+      "passwordHash": "",
+      "expiresAt": "2026-11-30T12:39:42.212Z",
+      "safetyStatus": "safe",
+      "safetyReason": "Lolos skrining heuristik phishing, skema, dan domain.",
+      "clickCount": 163,
+      "createdAt": "2026-11-14T12:39:42.212Z",
+      "updatedAt": "2026-11-16T12:09:42.212Z",
+      "customDomain": "",
+      "linkType": "url"
+    }
+  ],
+  "clicks": [
+    {
+      "id": "clk-1794832886820-89eff",
+      "ownerId": "demo-workspace",
+      "slug": "promo-desember",
+      "country": "Indonesia",
+      "city": "Jakarta",
+      "device": "Bot",
+      "os": "Automated",
+      "browser": "Crawler",
+      "referer": "Langsung",
+      "latencyMs": 1.08,
+      "cacheHit": true,
+      "createdAt": "2026-11-16T12:41:26.820Z"
+    },
+    {
+      "ownerId": "demo-workspace",
+      "slug": "promo-desember",
+      "country": "Indonesia",
+      "city": "Jakarta",
+      "device": "Mobile",
+      "os": "Android",
+      "browser": "Chrome",
+      "referer": "Instagram",
+      "latencyMs": 3.4,
+      "cacheHit": true,
+      "createdAt": "2026-11-10T13:39:42.212Z",
+      "id": "seed-click-1"
+    },
+    {
+      "ownerId": "demo-workspace",
+      "slug": "promo-desember",
+      "country": "Indonesia",
+      "city": "Bandung",
+      "device": "Mobile",
+      "os": "iOS",
+      "browser": "Safari",
+      "referer": "WhatsApp",
+      "latencyMs": 2.8,
+      "cacheHit": true,
+      "createdAt": "2026-11-11T14:39:42.212Z",
+      "id": "seed-click-2"
+    },
+    {
+      "ownerId": "demo-workspace",
+      "slug": "katalog-2026",
+      "country": "Singapura",
+      "city": "Singapore",
+      "device": "Desktop",
+      "os": "macOS",
+      "browser": "Chrome",
+      "referer": "Google",
+      "latencyMs": 14.2,
+      "cacheHit": false,
+      "createdAt": "2026-11-12T14:09:42.212Z",
+      "id": "seed-click-3"
+    },
+    {
+      "ownerId": "demo-workspace",
+      "slug": "promo-desember",
+      "country": "Indonesia",
+      "city": "Surabaya",
+      "device": "Mobile",
+      "os": "Android",
+      "browser": "Chrome",
+      "referer": "WhatsApp",
+      "latencyMs": 3.1,
+      "cacheHit": true,
+      "createdAt": "2026-11-13T15:39:42.212Z",
+      "id": "seed-click-4"
+    },
+    {
+      "ownerId": "demo-workspace",
+      "slug": "event-jkt",
+      "country": "Indonesia",
+      "city": "Jakarta",
+      "device": "Desktop",
+      "os": "Windows",
+      "browser": "Edge",
+      "referer": "LinkedIn",
+      "latencyMs": 4.1,
+      "cacheHit": true,
+      "createdAt": "2026-11-14T13:39:42.212Z",
+      "id": "seed-click-5"
+    },
+    {
+      "ownerId": "demo-workspace",
+      "slug": "vip-akses",
+      "country": "Malaysia",
+      "city": "Kuala Lumpur",
+      "device": "Desktop",
+      "os": "macOS",
+      "browser": "Safari",
+      "referer": "Langsung",
+      "latencyMs": 5.2,
+      "cacheHit": true,
+      "createdAt": "2026-11-15T14:39:42.212Z",
+      "id": "seed-click-6"
+    },
+    {
+      "ownerId": "demo-workspace",
+      "slug": "promo-desember",
+      "country": "Indonesia",
+      "city": "Yogyakarta",
+      "device": "Tablet",
+      "os": "iOS",
+      "browser": "Safari",
+      "referer": "X / Twitter",
+      "latencyMs": 2.9,
+      "cacheHit": true,
+      "createdAt": "2026-11-16T11:39:42.212Z",
+      "id": "seed-click-7"
+    },
+    {
+      "ownerId": "demo-workspace",
+      "slug": "katalog-2026",
+      "country": "Indonesia",
+      "city": "Jakarta",
+      "device": "Desktop",
+      "os": "Windows",
+      "browser": "Chrome",
+      "referer": "Google",
+      "latencyMs": 2.3,
+      "cacheHit": true,
+      "createdAt": "2026-11-16T12:19:42.212Z",
+      "id": "seed-click-8"
+    }
+  ],
+  "bios": [
+    {
+      "handle": "nusantarastudio",
+      "ownerId": "demo-workspace",
+      "displayName": "Nadia Pratama — Nusantara Studio",
+      "bio": "Product Engineer & Digital Strategist. Kumpulan tautan katalog produk, dokumentasi API, dan jadwal sesi konsultasi.",
+      "theme": "cobalt",
+      "avatarUrl": "/src/assets/images/avatar_bio_creator_1794832316229.jpg",
+      "createdAt": "2026-11-09T12:39:42.212Z",
+      "updatedAt": "2026-11-16T11:39:42.212Z",
+      "items": [
+        {
+          "id": "bio-1",
+          "ownerId": "demo-workspace",
+          "title": "Promo Akhir Tahun 2026 (Diskon s.d. 45%)",
+          "url": "https://tokopedia.com/promo-akhir-tahun-elektronik",
+          "order": 0,
+          "clicks": 312,
+          "isActive": true,
+          "createdAt": "2026-11-11T12:39:42.212Z",
+          "updatedAt": "2026-11-16T11:39:42.212Z"
+        },
+        {
+          "id": "bio-2",
+          "ownerId": "demo-workspace",
+          "title": "Dokumentasi Developer & REST API",
+          "url": "https://developer.mozilla.org/en-US/docs/Web/HTTP",
+          "order": 1,
+          "clicks": 185,
+          "isActive": true,
+          "createdAt": "2026-11-11T12:39:42.212Z",
+          "updatedAt": "2026-11-16T11:39:42.212Z"
+        },
+        {
+          "id": "bio-3",
+          "ownerId": "demo-workspace",
+          "title": "Daftar Tech Meetup Jakarta Bulan Ini",
+          "url": "https://react.dev/learn",
+          "order": 2,
+          "clicks": 94,
+          "isActive": true,
+          "createdAt": "2026-11-13T12:39:42.212Z",
+          "updatedAt": "2026-11-16T11:39:42.212Z"
+        }
+      ],
+      "templateId": "minimal-card",
+      "customDomain": ""
+    }
+  ],
+  "accounts": [
+    {
+      "username": "admin",
+      "passwordHash": "$scrypt$6c64d8cdc1306df120faefe9da467b6c$ca84a0841733e360c7792765271899908d52a1cd4d0497fb6f4d1096c5ccfb38",
+      "role": "super_admin",
+      "createdAt": "2026-11-16T13:02:53.736Z",
+      "updatedAt": "2026-11-16T13:04:13.327Z"
+    }
+  ],
+  "settings": {
+    "activeDomain": "go.mydomain.com",
+    "customDomains": [
+      {
+        "domain": "go.mydomain.com",
+        "planTier": "free",
+        "cnameTarget": "edge.tautkilat.id",
+        "txtVerificationHost": "_cf-custom-hostname.go.mydomain.com",
+        "txtVerificationValue": "tk-cf-saas-9fbb25490147",
+        "sslStatus": "active",
+        "sslProvider": "cloudflare_saas",
+        "verified": true,
+        "addedAt": "2026-11-16T13:03:20.092Z",
+        "diagnosticMessage": "Tambahkan CNAME ke edge.tautkilat.id untuk mengaktifkan SSL Cloudflare for SaaS."
+      }
+    ],
+    "zapierHookSecret": "tk_zap_4eab2f42e7aaf4d63cdc9308"
+  },
+  "apiKeys": [],
+  "webhooks": [],
+  "webhookLogs": []
+}

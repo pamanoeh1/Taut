@@ -1,0 +1,361 @@
+{
+  "entities": {
+    "UserPrivateProfile": {
+      "title": "UserPrivateProfile",
+      "description": "Private authenticated user profile storing PII isolated from public collections.",
+      "type": "object",
+      "properties": {
+        "uid": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[a-zA-Z0-9_\\-]+$"
+        },
+        "email": {
+          "type": "string",
+          "format": "email",
+          "minLength": 3,
+          "maxLength": 254
+        },
+        "displayName": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 100
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "updatedAt": {
+          "type": "string",
+          "format": "date-time"
+        }
+      },
+      "required": ["uid", "email", "displayName", "createdAt", "updatedAt"]
+    },
+    "AccountSettings": {
+      "title": "AccountSettings",
+      "description": "Private account settings including linked custom domains for shortlink generation.",
+      "type": "object",
+      "properties": {
+        "uid": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[a-zA-Z0-9_\\-]+$"
+        },
+        "activeDomain": {
+          "type": "string",
+          "minLength": 0,
+          "maxLength": 253
+        },
+        "customDomains": {
+          "type": "array"
+        },
+        "updatedAt": {
+          "type": "string",
+          "format": "date-time"
+        }
+      },
+      "required": ["uid", "activeDomain", "customDomains", "updatedAt"]
+    },
+    "ShortLink": {
+      "title": "ShortLink",
+      "description": "Shortened URL entry with custom slug, optional custom domain, security protections, and click counter.",
+      "type": "object",
+      "properties": {
+        "slug": {
+          "type": "string",
+          "minLength": 3,
+          "maxLength": 64,
+          "pattern": "^[a-zA-Z0-9_\\-]+$"
+        },
+        "ownerId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[a-zA-Z0-9_\\-]+$"
+        },
+        "targetUrl": {
+          "type": "string",
+          "format": "uri",
+          "minLength": 8,
+          "maxLength": 2048
+        },
+        "title": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 120
+        },
+        "customDomain": {
+          "type": "string",
+          "minLength": 0,
+          "maxLength": 253
+        },
+        "linkType": {
+          "type": "string",
+          "enum": ["url", "vcard"]
+        },
+        "maxClicks": {
+          "type": "integer"
+        },
+        "interstitialEnabled": {
+          "type": "boolean"
+        },
+        "redirectType": {
+          "type": "integer",
+          "enum": [301, 302]
+        },
+        "isActive": {
+          "type": "boolean"
+        },
+        "hasPassword": {
+          "type": "boolean"
+        },
+        "passwordHash": {
+          "type": "string",
+          "minLength": 0,
+          "maxLength": 128
+        },
+        "expiresAt": {
+          "type": "string",
+          "minLength": 0,
+          "maxLength": 64
+        },
+        "safetyStatus": {
+          "type": "string",
+          "enum": ["safe", "warning", "blocked"]
+        },
+        "safetyReason": {
+          "type": "string",
+          "minLength": 0,
+          "maxLength": 240
+        },
+        "clickCount": {
+          "type": "integer"
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "updatedAt": {
+          "type": "string",
+          "format": "date-time"
+        }
+      },
+      "required": [
+        "slug",
+        "ownerId",
+        "targetUrl",
+        "title",
+        "customDomain",
+        "redirectType",
+        "isActive",
+        "hasPassword",
+        "passwordHash",
+        "expiresAt",
+        "safetyStatus",
+        "safetyReason",
+        "clickCount",
+        "createdAt",
+        "updatedAt"
+      ]
+    },
+    "ClickEvent": {
+      "title": "ClickEvent",
+      "description": "Anonymized visitor click telemetry linked to a ShortLink.",
+      "type": "object",
+      "properties": {
+        "ownerId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[a-zA-Z0-9_\\-]+$"
+        },
+        "slug": {
+          "type": "string",
+          "minLength": 3,
+          "maxLength": 64,
+          "pattern": "^[a-zA-Z0-9_\\-]+$"
+        },
+        "country": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 64
+        },
+        "city": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 64
+        },
+        "device": {
+          "type": "string",
+          "enum": ["Desktop", "Mobile", "Tablet", "Bot"]
+        },
+        "os": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 40
+        },
+        "browser": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 40
+        },
+        "referer": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 120
+        },
+        "latencyMs": {
+          "type": "number"
+        },
+        "cacheHit": {
+          "type": "boolean"
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time"
+        }
+      },
+      "required": [
+        "ownerId",
+        "slug",
+        "country",
+        "city",
+        "device",
+        "os",
+        "browser",
+        "referer",
+        "latencyMs",
+        "cacheHit",
+        "createdAt"
+      ]
+    },
+    "BioProfile": {
+      "title": "BioProfile",
+      "description": "Public Link-in-Bio profile page owned by a user.",
+      "type": "object",
+      "properties": {
+        "handle": {
+          "type": "string",
+          "minLength": 3,
+          "maxLength": 48,
+          "pattern": "^[a-zA-Z0-9_\\-]+$"
+        },
+        "ownerId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[a-zA-Z0-9_\\-]+$"
+        },
+        "displayName": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 80
+        },
+        "bio": {
+          "type": "string",
+          "minLength": 0,
+          "maxLength": 280
+        },
+        "theme": {
+          "type": "string",
+          "enum": ["slate", "cobalt", "emerald", "amber"]
+        },
+        "templateId": {
+          "type": "string",
+          "enum": ["minimal-card", "creator-grid", "product-showcase", "dark-terminal"]
+        },
+        "customDomain": {
+          "type": "string",
+          "minLength": 0,
+          "maxLength": 253
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "updatedAt": {
+          "type": "string",
+          "format": "date-time"
+        }
+      },
+      "required": ["handle", "ownerId", "displayName", "bio", "theme", "createdAt", "updatedAt"]
+    },
+    "BioLinkItem": {
+      "title": "BioLinkItem",
+      "description": "Single link entry inside a Link-in-Bio profile.",
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 64,
+          "pattern": "^[a-zA-Z0-9_\\-]+$"
+        },
+        "ownerId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[a-zA-Z0-9_\\-]+$"
+        },
+        "title": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 80
+        },
+        "url": {
+          "type": "string",
+          "format": "uri",
+          "minLength": 8,
+          "maxLength": 2048
+        },
+        "order": {
+          "type": "integer"
+        },
+        "clicks": {
+          "type": "integer"
+        },
+        "isActive": {
+          "type": "boolean"
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "updatedAt": {
+          "type": "string",
+          "format": "date-time"
+        }
+      },
+      "required": ["id", "ownerId", "title", "url", "order", "clicks", "isActive", "createdAt", "updatedAt"]
+    }
+  },
+  "firestore": {
+    "/users/{userId}/private/profile": {
+      "schema": { "$ref": "#/entities/UserPrivateProfile" },
+      "description": "Private user account metadata isolated per UID."
+    },
+    "/users/{userId}/private/settings": {
+      "schema": { "$ref": "#/entities/AccountSettings" },
+      "description": "Private custom domain settings synced per UID."
+    },
+    "/shortLinks/{linkId}": {
+      "schema": { "$ref": "#/entities/ShortLink" },
+      "description": "Shortened URL documents keyed by custom or generated slug."
+    },
+    "/shortLinks/{linkId}/clicks/{clickId}": {
+      "schema": { "$ref": "#/entities/ClickEvent" },
+      "description": "Click analytics subcollection for each shortlink."
+    },
+    "/bioProfiles/{handle}": {
+      "schema": { "$ref": "#/entities/BioProfile" },
+      "description": "Public Link-in-Bio creator profiles keyed by handle."
+    },
+    "/bioProfiles/{handle}/items/{itemId}": {
+      "schema": { "$ref": "#/entities/BioLinkItem" },
+      "description": "Ordered link items within a Link-in-Bio profile."
+    }
+  }
+}

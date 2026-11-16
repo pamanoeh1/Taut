@@ -1,0 +1,305 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // Global default-deny safety net
+    match /{document=**} {
+      allow read, write: if false;
+    }
+
+    function incoming() {
+      return request.resource.data;
+    }
+
+    function existing() {
+      return resource.data;
+    }
+
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function isVerifiedUser() {
+      return isSignedIn() && request.auth.token.email_verified == true;
+    }
+
+    function isValidId(id) {
+      return id is string && id.size() >= 1 && id.size() <= 128 && id.matches('^[a-zA-Z0-9_\\-]+$');
+    }
+
+    function isValidSlugId(id) {
+      return id is string && id.size() >= 3 && id.size() <= 64 && id.matches('^[a-zA-Z0-9_\\-]+$');
+    }
+
+    function isValidBioHandle(id) {
+      return id is string && id.size() >= 3 && id.size() <= 48 && id.matches('^[a-zA-Z0-9_\\-]+$');
+    }
+
+    function isValidUserPrivateProfile(data, userId) {
+      return data.keys().hasAll(['uid', 'email', 'displayName', 'createdAt', 'updatedAt'])
+        && data.keys().hasOnly(['uid', 'email', 'displayName', 'createdAt', 'updatedAt'])
+        && data.uid is string && data.uid == userId && isValidId(data.uid)
+        && data.email is string && data.email.size() >= 3 && data.email.size() <= 254
+        && data.displayName is string && data.displayName.size() >= 1 && data.displayName.size() <= 100
+        && data.createdAt is timestamp
+        && data.updatedAt is timestamp;
+    }
+
+    function isValidAccountSettings(data, userId) {
+      return data.keys().hasAll(['uid', 'activeDomain', 'customDomains', 'updatedAt'])
+        && data.keys().hasOnly(['uid', 'activeDomain', 'customDomains', 'updatedAt'])
+        && data.uid is string && data.uid == userId && isValidId(data.uid)
+        && data.activeDomain is string && data.activeDomain.size() <= 253
+        && data.customDomains is list && data.customDomains.size() <= 10
+        && (data.customDomains.size() == 0 || (data.customDomains[0] is string && data.customDomains[0].size() <= 253))
+        && data.updatedAt is timestamp;
+    }
+
+    function isValidShortLink(data) {
+      return data.keys().hasAll([
+          'slug', 'ownerId', 'targetUrl', 'title', 'customDomain', 'redirectType',
+          'isActive', 'hasPassword', 'passwordHash', 'expiresAt',
+          'safetyStatus', 'safetyReason', 'clickCount', 'createdAt', 'updatedAt'
+        ])
+        && data.keys().hasOnly([
+          'slug', 'ownerId', 'targetUrl', 'title', 'customDomain', 'linkType',
+          'maxClicks', 'interstitialEnabled', 'redirectType',
+          'isActive', 'hasPassword', 'passwordHash', 'expiresAt',
+          'safetyStatus', 'safetyReason', 'clickCount', 'createdAt', 'updatedAt'
+        ])
+        && isValidSlugId(data.slug)
+        && isValidId(data.ownerId)
+        && data.targetUrl is string && data.targetUrl.size() >= 8 && data.targetUrl.size() <= 2048
+        && data.targetUrl.matches('^https?://.*$')
+        && data.title is string && data.title.size() >= 1 && data.title.size() <= 120
+        && data.customDomain is string && data.customDomain.size() <= 253
+        && (!('linkType' in data) || (data.linkType is string && data.linkType in ['url', 'vcard']))
+        && (!('maxClicks' in data) || (data.maxClicks is int && data.maxClicks >= 0))
+        && (!('interstitialEnabled' in data) || data.interstitialEnabled is bool)
+        && (data.redirectType == 301 || data.redirectType == 302)
+        && data.isActive is bool
+        && data.hasPassword is bool
+        && data.passwordHash is string && data.passwordHash.size() <= 128
+        && data.expiresAt is string && data.expiresAt.size() <= 64
+        && data.safetyStatus in ['safe', 'warning', 'blocked']
+        && data.safetyReason is string && data.safetyReason.size() <= 240
+        && data.clickCount is int && data.clickCount >= 0
+        && data.createdAt is timestamp
+        && data.updatedAt is timestamp;
+    }
+
+    function isValidClickEvent(data, linkId) {
+      return data.keys().hasAll([
+          'ownerId', 'slug', 'country', 'city', 'device',
+          'os', 'browser', 'referer', 'latencyMs', 'cacheHit', 'createdAt'
+        ])
+        && data.keys().hasOnly([
+          'ownerId', 'slug', 'country', 'city', 'device',
+          'os', 'browser', 'referer', 'latencyMs', 'cacheHit', 'createdAt'
+        ])
+        && isValidId(data.ownerId)
+        && data.slug == linkId && isValidSlugId(data.slug)
+        && data.country is string && data.country.size() >= 1 && data.country.size() <= 64
+        && data.city is string && data.city.size() >= 1 && data.city.size() <= 64
+        && data.device in ['Desktop', 'Mobile', 'Tablet', 'Bot']
+        && data.os is string && data.os.size() >= 1 && data.os.size() <= 40
+        && data.browser is string && data.browser.size() >= 1 && data.browser.size() <= 40
+        && data.referer is string && data.referer.size() >= 1 && data.referer.size() <= 120
+        && (data.latencyMs is number || data.latencyMs is int) && data.latencyMs >= 0 && data.latencyMs <= 60000
+        && data.cacheHit is bool
+        && data.createdAt is timestamp;
+    }
+
+    function isValidBioProfile(data, handle) {
+      return data.keys().hasAll(['handle', 'ownerId', 'displayName', 'bio', 'theme', 'createdAt', 'updatedAt'])
+        && data.keys().hasOnly(['handle', 'ownerId', 'displayName', 'bio', 'theme', 'templateId', 'customDomain', 'createdAt', 'updatedAt'])
+        && data.handle == handle && isValidBioHandle(data.handle)
+        && isValidId(data.ownerId)
+        && data.displayName is string && data.displayName.size() >= 1 && data.displayName.size() <= 80
+        && data.bio is string && data.bio.size() <= 280
+        && data.theme in ['slate', 'cobalt', 'emerald', 'amber']
+        && (!('templateId' in data) || (data.templateId is string && data.templateId in ['minimal-card', 'creator-grid', 'product-showcase', 'dark-terminal']))
+        && (!('customDomain' in data) || (data.customDomain is string && data.customDomain.size() <= 253))
+        && data.createdAt is timestamp
+        && data.updatedAt is timestamp;
+    }
+
+    function isValidBioLinkItem(data, itemId) {
+      return data.keys().hasAll(['id', 'ownerId', 'title', 'url', 'order', 'clicks', 'isActive', 'createdAt', 'updatedAt'])
+        && data.keys().hasOnly(['id', 'ownerId', 'title', 'url', 'order', 'clicks', 'isActive', 'createdAt', 'updatedAt'])
+        && data.id == itemId && isValidId(data.id)
+        && isValidId(data.ownerId)
+        && data.title is string && data.title.size() >= 1 && data.title.size() <= 80
+        && data.url is string && data.url.size() >= 8 && data.url.size() <= 2048
+        && data.url.matches('^https?://.*$')
+        && data.order is int && data.order >= 0 && data.order <= 200
+        && data.clicks is int && data.clicks >= 0
+        && data.isActive is bool
+        && data.createdAt is timestamp
+        && data.updatedAt is timestamp;
+    }
+
+    // 1. Private User Profile (PII isolated)
+    match /users/{userId}/private/profile {
+      allow get: if isSignedIn() && isValidId(userId) && request.auth.uid == userId;
+      allow create: if isVerifiedUser()
+        && isValidId(userId)
+        && request.auth.uid == userId
+        && isValidUserPrivateProfile(incoming(), userId)
+        && incoming().createdAt == request.time
+        && incoming().updatedAt == request.time;
+      allow update: if isVerifiedUser()
+        && isValidId(userId)
+        && request.auth.uid == userId
+        && isValidUserPrivateProfile(incoming(), userId)
+        && incoming().uid == existing().uid
+        && incoming().createdAt == existing().createdAt
+        && incoming().updatedAt == request.time
+        && incoming().diff(existing()).affectedKeys().hasOnly(['email', 'displayName', 'updatedAt']);
+    }
+
+    // 1b. Private User Settings (Custom Domains)
+    match /users/{userId}/private/settings {
+      allow get: if isSignedIn() && isValidId(userId) && request.auth.uid == userId;
+      allow create: if isVerifiedUser()
+        && isValidId(userId)
+        && request.auth.uid == userId
+        && isValidAccountSettings(incoming(), userId)
+        && incoming().updatedAt == request.time;
+      allow update: if isVerifiedUser()
+        && isValidId(userId)
+        && request.auth.uid == userId
+        && isValidAccountSettings(incoming(), userId)
+        && incoming().uid == existing().uid
+        && incoming().updatedAt == request.time
+        && incoming().diff(existing()).affectedKeys().hasOnly(['activeDomain', 'customDomains', 'updatedAt']);
+    }
+
+    // 2. ShortLinks
+    match /shortLinks/{linkId} {
+      allow get: if isValidSlugId(linkId);
+      allow list: if isSignedIn() && resource.data.ownerId == request.auth.uid;
+
+      allow create: if isVerifiedUser()
+        && isValidSlugId(linkId)
+        && isValidShortLink(incoming())
+        && incoming().slug == linkId
+        && incoming().ownerId == request.auth.uid
+        && incoming().clickCount == 0
+        && incoming().createdAt == request.time
+        && incoming().updatedAt == request.time;
+
+      allow update: if isValidSlugId(linkId) && isValidShortLink(incoming()) && (
+        (
+          isVerifiedUser()
+          && existing().ownerId == request.auth.uid
+          && incoming().ownerId == existing().ownerId
+          && incoming().slug == existing().slug
+          && incoming().createdAt == existing().createdAt
+          && incoming().updatedAt == request.time
+          && incoming().diff(existing()).affectedKeys().hasOnly([
+            'targetUrl', 'title', 'customDomain', 'linkType', 'maxClicks', 'interstitialEnabled',
+            'redirectType', 'isActive', 'hasPassword', 'passwordHash', 'expiresAt',
+            'safetyStatus', 'safetyReason', 'updatedAt'
+          ])
+        )
+        ||
+        (
+          existing().isActive == true
+          && incoming().clickCount == existing().clickCount + 1
+          && incoming().updatedAt == request.time
+          && incoming().diff(existing()).affectedKeys().hasOnly(['clickCount', 'updatedAt'])
+        )
+      );
+
+      allow delete: if isVerifiedUser()
+        && isValidSlugId(linkId)
+        && existing().ownerId == request.auth.uid;
+
+      match /clicks/{clickId} {
+        allow get: if isSignedIn() && isValidSlugId(linkId) && isValidId(clickId)
+          && resource.data.ownerId == request.auth.uid;
+        allow list: if isSignedIn() && resource.data.ownerId == request.auth.uid;
+        allow create: if isValidSlugId(linkId)
+          && isValidId(clickId)
+          && isValidClickEvent(incoming(), linkId)
+          && incoming().createdAt == request.time
+          && exists(/databases/$(database)/documents/shortLinks/$(linkId))
+          && incoming().ownerId == get(/databases/$(database)/documents/shortLinks/$(linkId)).data.ownerId;
+      }
+    }
+
+    // 3. Link-in-Bio Profiles
+    match /bioProfiles/{handle} {
+      allow get: if isValidBioHandle(handle);
+      allow list: if isSignedIn() && resource.data.ownerId == request.auth.uid;
+
+      allow create: if isVerifiedUser()
+        && isValidBioHandle(handle)
+        && isValidBioProfile(incoming(), handle)
+        && incoming().ownerId == request.auth.uid
+        && incoming().createdAt == request.time
+        && incoming().updatedAt == request.time;
+
+      allow update: if isVerifiedUser()
+        && isValidBioHandle(handle)
+        && isValidBioProfile(incoming(), handle)
+        && existing().ownerId == request.auth.uid
+        && incoming().ownerId == existing().ownerId
+        && incoming().handle == existing().handle
+        && incoming().createdAt == existing().createdAt
+        && incoming().updatedAt == request.time
+        && incoming().diff(existing()).affectedKeys().hasOnly([
+          'displayName', 'bio', 'theme', 'templateId', 'customDomain', 'updatedAt'
+        ]);
+
+      allow delete: if isVerifiedUser()
+        && isValidBioHandle(handle)
+        && existing().ownerId == request.auth.uid;
+
+      match /items/{itemId} {
+        allow get: if isValidBioHandle(handle) && isValidId(itemId);
+        allow list: if isValidBioHandle(handle);
+
+        allow create: if isVerifiedUser()
+          && isValidBioHandle(handle)
+          && isValidId(itemId)
+          && isValidBioLinkItem(incoming(), itemId)
+          && incoming().ownerId == request.auth.uid
+          && incoming().clicks == 0
+          && incoming().createdAt == request.time
+          && incoming().updatedAt == request.time
+          && exists(/databases/$(database)/documents/bioProfiles/$(handle))
+          && get(/databases/$(database)/documents/bioProfiles/$(handle)).data.ownerId == request.auth.uid;
+
+        allow update: if isValidBioHandle(handle)
+          && isValidId(itemId)
+          && isValidBioLinkItem(incoming(), itemId)
+          && (
+            (
+              isVerifiedUser()
+              && existing().ownerId == request.auth.uid
+              && incoming().ownerId == existing().ownerId
+              && incoming().id == existing().id
+              && incoming().createdAt == existing().createdAt
+              && incoming().updatedAt == request.time
+              && incoming().diff(existing()).affectedKeys().hasOnly([
+                'title', 'url', 'order', 'isActive', 'updatedAt'
+              ])
+            )
+            ||
+            (
+              existing().isActive == true
+              && incoming().clicks == existing().clicks + 1
+              && incoming().updatedAt == request.time
+              && incoming().diff(existing()).affectedKeys().hasOnly(['clicks', 'updatedAt'])
+            )
+          );
+
+        allow delete: if isVerifiedUser()
+          && isValidBioHandle(handle)
+          && isValidId(itemId)
+          && existing().ownerId == request.auth.uid;
+      }
+    }
+  }
+}
