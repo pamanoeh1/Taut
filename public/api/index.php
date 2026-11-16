@@ -1118,10 +1118,38 @@ if (preg_match('#^/api/links/([^/]+)$#', $routePath, $m) && $method === 'PATCH')
     $patchFields = [
         'title', 'isActive', 'redirectType', 'expiresAt', 'customDomain',
         'maxClicks', 'interstitialEnabled', 'trackingPixels', 'ogMeta',
-        'utm', 'geoRules', 'deviceRules', 'abVariants', 'timeRule'
+        'utm', 'geoRules', 'deviceRules', 'abVariants', 'timeRule', 'vcard'
     ];
-    foreach ($state['links'] as &$l) {
+    foreach ($state['links'] as $idx => &$l) {
         if ($l['slug'] === $slug) {
+            if (!empty($body['newSlug'])) {
+                $newSlug = strtolower(trim((string)$body['newSlug']));
+                if (!preg_match('/^[a-z0-9_-]{3,64}$/', $newSlug)) {
+                    tk_json_response(400, ['error' => 'Slug baru hanya boleh huruf kecil, angka, strip, dan garis bawah (3-64 karakter).']);
+                }
+                foreach ($state['links'] as $j => $other) {
+                    if ($j !== $idx && $other['slug'] === $newSlug) {
+                        tk_json_response(409, ['error' => "Slug \"$newSlug\" sudah digunakan."]);
+                    }
+                }
+                $l['slug'] = $newSlug;
+                foreach ($state['clicks'] as &$clk) {
+                    if (($clk['slug'] ?? '') === $slug) $clk['slug'] = $newSlug;
+                }
+                unset($clk);
+            }
+            if (!empty($body['targetUrl'])) {
+                $check = tk_validate_url((string)$body['targetUrl']);
+                if (!$check['valid']) tk_json_response(400, ['error' => $check['error']]);
+                $l['targetUrl'] = $check['normalizedUrl'];
+            }
+            if (!empty($body['clearPassword'])) {
+                $l['hasPassword'] = false;
+                $l['passwordHash'] = '';
+            } elseif (!empty($body['password'])) {
+                $l['hasPassword'] = true;
+                $l['passwordHash'] = password_hash((string)$body['password'], PASSWORD_DEFAULT);
+            }
             foreach ($patchFields as $field) {
                 if (array_key_exists($field, $body)) {
                     $l[$field] = $body[$field];
@@ -1129,7 +1157,7 @@ if (preg_match('#^/api/links/([^/]+)$#', $routePath, $m) && $method === 'PATCH')
             }
             $l['updatedAt'] = tk_now_iso();
             tk_save_state($state);
-            tk_json_response(200, ['link' => $l]);
+            tk_json_response(200, ['link' => $l, 'previousSlug' => $slug]);
         }
     }
     unset($l);
@@ -1190,6 +1218,46 @@ if ($routePath === '/api/analytics' && $method === 'GET') {
     ]);
 }
 
+if ($routePath === '/api/bios' && $method === 'GET') {
+    $requireSession();
+    tk_json_response(200, ['profiles' => $state['bios']]);
+}
+
+if ($routePath === '/api/bios' && $method === 'POST') {
+    $requireSession();
+    $body = tk_read_json_body();
+    $handle = strtolower(trim((string)($body['handle'] ?? '')));
+    if (!preg_match('/^[a-z0-9_-]{3,48}$/', $handle)) {
+        tk_json_response(400, ['error' => 'Handle bio harus 3-48 karakter (huruf kecil, angka, strip, garis bawah).']);
+    }
+    foreach ($state['bios'] as $b) {
+        if (strtolower((string)$b['handle']) === $handle) {
+            tk_json_response(409, ['error' => "Handle \"/u/$handle\" sudah digunakan."]);
+        }
+    }
+    $displayName = trim((string)($body['displayName'] ?? ''));
+    if ($displayName === '') tk_json_response(400, ['error' => 'Nama tampilan wajib diisi.']);
+    $now = tk_now_iso();
+    $created = [
+        'handle' => $handle,
+        'ownerId' => $sessionUser['username'],
+        'displayName' => $displayName,
+        'bio' => trim((string)($body['bio'] ?? '')),
+        'theme' => (string)($body['theme'] ?? 'cobalt'),
+        'templateId' => (string)($body['templateId'] ?? 'minimal-card'),
+        'customDomain' => strtolower(trim((string)($body['customDomain'] ?? ''))),
+        'avatarUrl' => isset($body['avatarUrl']) ? trim((string)$body['avatarUrl']) : '/src/assets/images/avatar_bio_creator_1794832316229.jpg',
+        'backgroundImageUrl' => isset($body['backgroundImageUrl']) ? trim((string)$body['backgroundImageUrl']) : '',
+        'backgroundOverlay' => (string)($body['backgroundOverlay'] ?? 'dark'),
+        'items' => is_array($body['items'] ?? null) ? $body['items'] : [],
+        'createdAt' => $now,
+        'updatedAt' => $now,
+    ];
+    array_unshift($state['bios'], $created);
+    tk_save_state($state);
+    tk_json_response(201, ['profile' => $created]);
+}
+
 if (preg_match('#^/api/bio/([^/]+)$#', $routePath, $m) && $method === 'GET') {
     $handle = strtolower(urldecode($m[1]));
     foreach ($state['bios'] as $b) {
@@ -1223,31 +1291,64 @@ if (preg_match('#^/api/bio/([^/]+)$#', $routePath, $m) && $method === 'PUT') {
     $requireSession();
     $handle = strtolower(urldecode($m[1]));
     $body = tk_read_json_body();
+    $targetHandle = $handle;
+    if (!empty($body['newHandle']) && strtolower(trim((string)$body['newHandle'])) !== $handle) {
+        $cand = strtolower(trim((string)$body['newHandle']));
+        if (!preg_match('/^[a-z0-9_-]{3,48}$/', $cand)) {
+            tk_json_response(400, ['error' => 'Handle bio baru tidak valid.']);
+        }
+        foreach ($state['bios'] as $b) {
+            if (strtolower((string)$b['handle']) === $cand) {
+                tk_json_response(409, ['error' => "Handle \"/u/$cand\" sudah digunakan."]);
+            }
+        }
+        $targetHandle = $cand;
+    }
+
+    $foundIdx = -1;
+    foreach ($state['bios'] as $i => $b) {
+        if ($b['handle'] === $handle) {
+            $foundIdx = $i;
+            break;
+        }
+    }
+    $prev = $foundIdx >= 0 ? $state['bios'][$foundIdx] : null;
     $updated = [
-        'handle' => $handle,
-        'ownerId' => $sessionUser['username'],
-        'displayName' => trim((string)($body['displayName'] ?? $handle)),
+        'handle' => $targetHandle,
+        'ownerId' => $prev['ownerId'] ?? $sessionUser['username'],
+        'displayName' => trim((string)($body['displayName'] ?? $targetHandle)),
         'bio' => trim((string)($body['bio'] ?? '')),
         'theme' => (string)($body['theme'] ?? 'cobalt'),
         'templateId' => (string)($body['templateId'] ?? 'minimal-card'),
         'customDomain' => strtolower(trim((string)($body['customDomain'] ?? ''))),
-        'avatarUrl' => '/src/assets/images/avatar_bio_creator_1794832316229.jpg',
+        'avatarUrl' => array_key_exists('avatarUrl', $body)
+            ? trim((string)$body['avatarUrl'])
+            : ($prev['avatarUrl'] ?? '/src/assets/images/avatar_bio_creator_1794832316229.jpg'),
+        'backgroundImageUrl' => array_key_exists('backgroundImageUrl', $body)
+            ? trim((string)$body['backgroundImageUrl'])
+            : ($prev['backgroundImageUrl'] ?? ''),
+        'backgroundOverlay' => (string)($body['backgroundOverlay'] ?? ($prev['backgroundOverlay'] ?? 'dark')),
         'items' => is_array($body['items'] ?? null) ? $body['items'] : [],
-        'createdAt' => tk_now_iso(),
+        'createdAt' => $prev['createdAt'] ?? tk_now_iso(),
         'updatedAt' => tk_now_iso(),
     ];
-    $found = false;
-    foreach ($state['bios'] as &$b) {
-        if ($b['handle'] === $handle) {
-            $b = $updated;
-            $found = true;
-            break;
-        }
+    if ($foundIdx >= 0) {
+        $state['bios'][$foundIdx] = $updated;
+    } else {
+        array_unshift($state['bios'], $updated);
     }
-    unset($b);
-    if (!$found) $state['bios'][] = $updated;
     tk_save_state($state);
-    tk_json_response(200, ['profile' => $updated]);
+    tk_json_response(200, ['profile' => $updated, 'previousHandle' => $handle]);
+}
+
+if (preg_match('#^/api/bio/([^/]+)$#', $routePath, $m) && $method === 'DELETE') {
+    $requireSession();
+    $handle = strtolower(urldecode($m[1]));
+    $state['bios'] = array_values(array_filter($state['bios'], static function ($b) use ($handle) {
+        return $b['handle'] !== $handle;
+    }));
+    tk_save_state($state);
+    tk_json_response(200, ['deleted' => true]);
 }
 
 if ($routePath === '/api/crypto-sandbox' && $method === 'POST') {

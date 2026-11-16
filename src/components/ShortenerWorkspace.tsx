@@ -12,6 +12,7 @@ import {
   Globe,
   Link2,
   Lock,
+  Pencil,
   Plus,
   Power,
   QrCode,
@@ -30,6 +31,7 @@ import type {
   GeoRouteRule,
   RedirectType,
   ShortLinkItem,
+  UpdateLinkPayload,
 } from '../types/shortlink';
 import {
   generateSampleCsvContent,
@@ -39,6 +41,7 @@ import {
 import { formatShortUrl } from '../utils/customDomain';
 import { appendUtmParams, isLinkQuotaExceeded } from '../utils/routingAndUtm';
 import { isLinkExpired, normalizeAndValidateUrl, screenUrlSafety } from '../utils/urlSecurity';
+import { EditLinkModal } from './EditLinkModal';
 
 interface ShortenerWorkspaceProps {
   links: ShortLinkItem[];
@@ -54,6 +57,7 @@ interface ShortenerWorkspaceProps {
     createdCount: number;
     skippedCount: number;
   }>;
+  onUpdateLink: (originalSlug: string, patch: UpdateLinkPayload) => Promise<ShortLinkItem>;
   onToggleActive: (link: ShortLinkItem) => Promise<void>;
   onDeleteLink: (slug: string) => Promise<void>;
   onOpenQr: (link: ShortLinkItem) => void;
@@ -80,6 +84,7 @@ export const ShortenerWorkspace: React.FC<ShortenerWorkspaceProps> = ({
   domainSettings,
   onCreateLink,
   onBulkCreateLinks,
+  onUpdateLink,
   onToggleActive,
   onDeleteLink,
   onOpenQr,
@@ -87,6 +92,7 @@ export const ShortenerWorkspace: React.FC<ShortenerWorkspaceProps> = ({
   onOpenSettings,
 }) => {
   const [mode, setMode] = useState<'single' | 'vcard' | 'bulk'>('single');
+  const [editingLink, setEditingLink] = useState<ShortLinkItem | null>(null);
 
   // Single shortener basic state
   const [targetUrl, setTargetUrl] = useState('');
@@ -636,6 +642,12 @@ export const ShortenerWorkspace: React.FC<ShortenerWorkspaceProps> = ({
                     </option>
                   ))}
                 </select>
+                {selectedDomain && (
+                  <p className="mt-1 text-[11px] text-slate-500 leading-snug">
+                    Pastikan DNS CNAME/A <code className="font-mono">{selectedDomain}</code> mengarah ke server TautKilat agar{' '}
+                    <code className="font-mono">/{customSlug || 'slug'}</code> langsung mengalihkan tanpa login.
+                  </p>
+                )}
               </div>
 
               <div className="lg:col-span-3">
@@ -1781,6 +1793,16 @@ export const ShortenerWorkspace: React.FC<ShortenerWorkspaceProps> = ({
 
                     <button
                       type="button"
+                      onClick={() => setEditingLink(link)}
+                      aria-label={`Edit tautan ${link.slug}`}
+                      className="inline-flex items-center gap-1.5 px-3 py-2 text-xs font-medium text-blue-800 bg-blue-50 border border-blue-200 hover:bg-blue-100 rounded-lg transition-colors whitespace-nowrap shrink-0"
+                    >
+                      <Pencil className="w-3.5 h-3.5" aria-hidden="true" />
+                      <span>Edit</span>
+                    </button>
+
+                    <button
+                      type="button"
                       onClick={() => handleCopy(link)}
                       aria-label={`Salin URL ${shortUrl}`}
                       className="inline-flex items-center gap-1.5 px-3 py-2 text-xs font-medium text-slate-700 bg-white border border-slate-200 hover:bg-slate-100 rounded-lg transition-colors whitespace-nowrap shrink-0"
@@ -1833,6 +1855,15 @@ export const ShortenerWorkspace: React.FC<ShortenerWorkspaceProps> = ({
           </div>
         )}
       </section>
+
+      <EditLinkModal
+        link={editingLink}
+        domainSettings={domainSettings}
+        onClose={() => setEditingLink(null)}
+        onSave={async (origSlug, patch) => {
+          await onUpdateLink(origSlug, patch);
+        }}
+      />
     </div>
   );
 };

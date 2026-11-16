@@ -312,6 +312,9 @@ async function createSeedFallbackState(): Promise<FallbackState> {
       theme: 'cobalt',
       templateId: 'minimal-card',
       customDomain: '',
+      avatarUrl: '/src/assets/images/avatar_bio_creator_1794832316229.jpg',
+      backgroundImageUrl: '',
+      backgroundOverlay: 'dark',
       createdAt: new Date(now - 7 * dayMs).toISOString(),
       updatedAt: new Date(now - 3600_000).toISOString(),
       items: [
@@ -1087,6 +1090,43 @@ export async function handleFallbackRequest(
     if (verb === 'PATCH') {
       if (!user) return authError(401, 'Sesi tidak valid.');
       if (idx === -1) return authError(404, 'Tautan tidak ditemukan.');
+      const current = state.links[idx];
+
+      let nextSlug = current.slug;
+      if (typeof body.newSlug === 'string' && body.newSlug.trim() && body.newSlug.trim().toLowerCase() !== current.slug) {
+        const sc = validateSlug(body.newSlug);
+        if (!sc.valid) return authError(400, sc.error || 'Slug baru tidak valid.');
+        if (state.links.some((l, i) => i !== idx && l.slug === sc.normalizedSlug)) {
+          return authError(409, `Slug "${sc.normalizedSlug}" sudah digunakan.`);
+        }
+        nextSlug = sc.normalizedSlug;
+      }
+
+      let nextUrl = current.targetUrl;
+      let nextSafetyStatus = current.safetyStatus;
+      let nextSafetyReason = current.safetyReason;
+      let nextSafetyEngine = current.safetyEngine || 'Heuristik Lokal';
+      if (typeof body.targetUrl === 'string' && body.targetUrl.trim()) {
+        const uc = normalizeAndValidateUrl(body.targetUrl);
+        if (!uc.valid) return authError(400, uc.error || 'URL tujuan tidak valid.');
+        const safety = screenUrlSafety(uc.normalizedUrl);
+        if (safety.status === 'blocked') return authError(400, safety.reasons.join(' '));
+        nextUrl = uc.normalizedUrl;
+        nextSafetyStatus = safety.status;
+        nextSafetyReason = safety.reasons[0] || 'Aman';
+        nextSafetyEngine = safety.engine || 'Heuristik Lokal';
+      }
+
+      let nextHasPassword = current.hasPassword;
+      let nextPasswordHash = current.passwordHash;
+      if (body.clearPassword === true) {
+        nextHasPassword = false;
+        nextPasswordHash = '';
+      } else if (typeof body.password === 'string' && body.password.trim()) {
+        nextHasPassword = true;
+        nextPasswordHash = await sha256HexBrowser(body.password.trim());
+      }
+
       const allowedKeys: Array<keyof ShortLinkItem> = [
         'title',
         'isActive',
@@ -1102,17 +1142,32 @@ export async function handleFallbackRequest(
         'deviceRules',
         'abVariants',
         'timeRule',
+        'vcard',
       ];
-      const updated = { ...state.links[idx] };
+      const updated = {
+        ...current,
+        slug: nextSlug,
+        targetUrl: nextUrl,
+        hasPassword: nextHasPassword,
+        passwordHash: nextPasswordHash,
+        safetyStatus: nextSafetyStatus,
+        safetyReason: nextSafetyReason,
+        safetyEngine: nextSafetyEngine,
+      };
       for (const k of allowedKeys) {
         if (k in body) {
           (updated as Record<string, unknown>)[k] = body[k];
         }
       }
+      if (nextSlug !== slug) {
+        for (const click of state.clicks) {
+          if (click.slug === slug) click.slug = nextSlug;
+        }
+      }
       updated.updatedAt = new Date().toISOString();
       state.links[idx] = updated;
       saveState(state);
-      return ok({ link: updated });
+      return ok({ link: updated, previousSlug: slug });
     }
 
     if (verb === 'DELETE') {
@@ -1131,7 +1186,58 @@ export async function handleFallbackRequest(
     return ok(computeAnalytics(state, filterSlug) as unknown as Record<string, unknown>);
   }
 
-  // 7. Link-in-Bio
+  // 7. Link-in-Bio (Unlimited multi-profile + full edit)
+  if (pathname === '/api/bios' && verb === 'GET') {
+    if (!user) return authError(401, 'Sesi tidak valid.');
+    const profiles = [...state.bios].sort((a, b) => b.updatedAt.localeCompare(a.updatedAt));
+    return ok({ profiles });
+  }
+
+  if (pathname === '/api/bios' && verb === 'POST') {
+    if (!user) return authError(401, 'Sesi tidak valid.');
+    const hc = validateSlug(String(body.handle || ''));
+    if (!hc.valid) return authError(400, hc.error || 'Handle bio tidak valid.');
+    if (state.bios.some((b) => b.handle.toLowerCase() === hc.normalizedSlug)) {
+      return authError(409, `Handle "/u/${hc.normalizedSlug}" sudah digunakan.`);
+    }
+    const displayName = String(body.displayName || '').trim();
+    if (!displayName) return authError(400, 'Nama tampilan profil wajib diisi.');
+    const nowIso = new Date().toISOString();
+    const incomingItems = Array.isArray(body.items) ? (body.items as BioLinkEntry[]) : [];
+    const created: BioProfile = {
+      handle: hc.normalizedSlug,
+      ownerId: user.username,
+      displayName: displayName.slice(0, 80),
+      bio: String(body.bio || '').slice(0, 280),
+      theme: (body.theme as BioProfile['theme']) || 'cobalt',
+      templateId: (body.templateId as BioProfile['templateId']) || 'minimal-card',
+      customDomain: String(body.customDomain || '').trim().toLowerCase(),
+      avatarUrl:
+        typeof body.avatarUrl === 'string'
+          ? body.avatarUrl.trim()
+          : '/src/assets/images/avatar_bio_creator_1794832316229.jpg',
+      backgroundImageUrl: typeof body.backgroundImageUrl === 'string' ? body.backgroundImageUrl.trim() : '',
+      backgroundOverlay: (body.backgroundOverlay as BioProfile['backgroundOverlay']) || 'dark',
+      items: incomingItems.map((it, i) => ({
+        id: it.id || `bio-${Date.now()}-${i}`,
+        ownerId: user.username,
+        title: String(it.title || 'Tautan'),
+        url: String(it.url || 'https://tautkilat.id'),
+        badge: it.badge,
+        order: i,
+        clicks: Number(it.clicks || 0),
+        isActive: it.isActive !== false,
+        createdAt: it.createdAt || nowIso,
+        updatedAt: nowIso,
+      })),
+      createdAt: nowIso,
+      updatedAt: nowIso,
+    };
+    state.bios.unshift(created);
+    saveState(state);
+    return ok({ profile: created }, 201);
+  }
+
   const bioClickMatch = pathname.match(/^\/api\/bio\/([^/]+)\/click$/);
   if (bioClickMatch && verb === 'POST') {
     const handle = decodeURIComponent(bioClickMatch[1]).toLowerCase();
@@ -1158,14 +1264,33 @@ export async function handleFallbackRequest(
       const nowIso = new Date().toISOString();
       const incomingItems = Array.isArray(body.items) ? (body.items as BioLinkEntry[]) : [];
       const idx = state.bios.findIndex((b) => b.handle === handle);
+      let targetHandle = handle;
+      if (typeof body.newHandle === 'string' && body.newHandle.trim() && body.newHandle.trim().toLowerCase() !== handle) {
+        const hc = validateSlug(body.newHandle);
+        if (!hc.valid) return authError(400, hc.error || 'Handle bio baru tidak valid.');
+        if (state.bios.some((b, i) => i !== idx && b.handle.toLowerCase() === hc.normalizedSlug)) {
+          return authError(409, `Handle "/u/${hc.normalizedSlug}" sudah digunakan.`);
+        }
+        targetHandle = hc.normalizedSlug;
+      }
+      const prev = idx >= 0 ? state.bios[idx] : undefined;
       const updated: BioProfile = {
-        handle,
-        ownerId: idx >= 0 ? state.bios[idx].ownerId : user.username,
-        displayName: String(body.displayName || handle),
+        handle: targetHandle,
+        ownerId: prev?.ownerId || user.username,
+        displayName: String(body.displayName || targetHandle),
         bio: String(body.bio || ''),
         theme: (body.theme as BioProfile['theme']) || 'cobalt',
         templateId: (body.templateId as BioProfile['templateId']) || 'minimal-card',
-        customDomain: String(body.customDomain || ''),
+        customDomain: String(body.customDomain || '').trim().toLowerCase(),
+        avatarUrl:
+          typeof body.avatarUrl === 'string'
+            ? body.avatarUrl.trim()
+            : prev?.avatarUrl ?? '/src/assets/images/avatar_bio_creator_1794832316229.jpg',
+        backgroundImageUrl:
+          typeof body.backgroundImageUrl === 'string'
+            ? body.backgroundImageUrl.trim()
+            : prev?.backgroundImageUrl ?? '',
+        backgroundOverlay: (body.backgroundOverlay as BioProfile['backgroundOverlay']) || prev?.backgroundOverlay || 'dark',
         items: incomingItems.map((it, i) => ({
           id: it.id || `bio-${Date.now()}-${i}`,
           ownerId: user.username,
@@ -1178,13 +1303,21 @@ export async function handleFallbackRequest(
           createdAt: it.createdAt || nowIso,
           updatedAt: nowIso,
         })),
-        createdAt: idx >= 0 ? state.bios[idx].createdAt : nowIso,
+        createdAt: prev?.createdAt || nowIso,
         updatedAt: nowIso,
       };
       if (idx >= 0) state.bios[idx] = updated;
-      else state.bios.push(updated);
+      else state.bios.unshift(updated);
       saveState(state);
-      return ok({ profile: updated });
+      return ok({ profile: updated, previousHandle: handle });
+    }
+    if (verb === 'DELETE') {
+      if (!user) return authError(401, 'Sesi tidak valid.');
+      const idx = state.bios.findIndex((b) => b.handle === handle);
+      if (idx === -1) return authError(404, 'Profil Link-in-Bio tidak ditemukan.');
+      state.bios.splice(idx, 1);
+      saveState(state);
+      return ok({ deleted: true });
     }
   }
 

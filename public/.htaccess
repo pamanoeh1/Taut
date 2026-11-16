@@ -8,7 +8,7 @@
   # Protect internal JSON data directory from direct web access
   RewriteRule ^api/data/ - [F,L]
 
-  # Route all API requests & shortlink redirects to PHP InfinityFree backend
+  # Route all API requests & explicit /s/:slug redirects to PHP InfinityFree backend
   RewriteRule ^api(/.*)?$ api/index.php [QSA,L]
   RewriteRule ^s/([^/]+)/?$ api/index.php?__route=/s/$1 [QSA,L]
 
@@ -17,6 +17,10 @@
   RewriteCond %{REQUEST_FILENAME} -d
   RewriteRule ^ - [L]
 
-  # Route React SPA views (/u/handle, etc.) to index.html
+  # Route custom-domain root shortlink slugs (/:slug) directly via PHP redirect engine without login
+  RewriteCond %{REQUEST_URI} !^/(api|s|u|assets|admin|login|logout|dashboard|analytics|bio|settings|health)(/|$) [NC]
+  RewriteRule ^([a-zA-Z0-9_-]{3,64})/?$ api/index.php?__route=/s/$1 [QSA,L]
+
+  # Route React SPA views (/u/handle, /, etc.) to index.html
   RewriteRule ^ index.html [L]
 </IfModule>

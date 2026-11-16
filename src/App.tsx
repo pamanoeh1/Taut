@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState } from 'react';
 import { onAuthStateChanged, signInWithPopup, signOut, type User } from 'firebase/auth';
 import { AnalyticsWorkspace } from './components/AnalyticsWorkspace';
 import { BlueprintWorkspace } from './components/BlueprintWorkspace';
+import { FeatureHelpWidget, type HelpPageContext } from './components/FeatureHelpWidget';
 import { HeaderNav, type WorkspaceTab } from './components/HeaderNav';
 import { LinkInBioWorkspace } from './components/LinkInBioWorkspace';
 import { LoginPage } from './components/LoginPage';
@@ -14,10 +15,12 @@ import { auth, googleAuthProvider, testFirestoreConnection } from './lib/firebas
 import {
   apiAddCustomDomain,
   apiBulkCreateLinks,
+  apiCreateBio,
   apiCreateLink,
+  apiDeleteBio,
   apiDeleteLink,
   apiFetchAnalytics,
-  apiFetchBio,
+  apiFetchBios,
   apiFetchDomainSettings,
   apiFetchLinks,
   apiFetchMe,
@@ -42,6 +45,7 @@ import type {
   AccountSettings,
   AnalyticsSummary,
   AuthSessionUser,
+  BioBackgroundOverlay,
   BioLinkEntry,
   BioProfile,
   BioTemplateId,
@@ -49,10 +53,12 @@ import type {
   CreateLinkPayload,
   DomainPlanTier,
   ShortLinkItem,
+  UpdateLinkPayload,
   VCardData,
 } from './types/shortlink';
 import type { ParsedBulkRow } from './utils/bulkImportParser';
 import { formatShortUrl } from './utils/customDomain';
+import { extractPublicRouteFromLocation } from './utils/customDomainRouting';
 
 const DEFAULT_BIO_PROFILE: BioProfile = {
   handle: 'nusantarastudio',
@@ -60,7 +66,10 @@ const DEFAULT_BIO_PROFILE: BioProfile = {
   displayName: 'Nadia Pratama — Nusantara Studio',
   bio: 'Product Engineer & Digital Strategist. Kumpulan tautan katalog produk, dokumentasi API, dan jadwal sesi konsultasi.',
   theme: 'cobalt',
+  templateId: 'minimal-card',
   avatarUrl: '/src/assets/images/avatar_bio_creator_1794832316229.jpg',
+  backgroundImageUrl: '',
+  backgroundOverlay: 'dark',
   items: [],
   createdAt: new Date().toISOString(),
   updatedAt: new Date().toISOString(),
@@ -96,7 +105,8 @@ export default function App() {
   const [analyticsSlug, setAnalyticsSlug] = useState<string>('all');
   const [analyticsLoading, setAnalyticsLoading] = useState(false);
 
-  const [bioProfile, setBioProfile] = useState<BioProfile>(DEFAULT_BIO_PROFILE);
+  const [bioProfiles, setBioProfiles] = useState<BioProfile[]>([DEFAULT_BIO_PROFILE]);
+  const [activeBioHandle, setActiveBioHandle] = useState<string>(DEFAULT_BIO_PROFILE.handle);
   const [bioSaving, setBioSaving] = useState(false);
 
   const [qrModal, setQrModal] = useState<{
@@ -110,6 +120,13 @@ export default function App() {
     url: '',
     vcard: null,
   });
+
+  // Sync browser back/forward navigation
+  useEffect(() => {
+    const onPopState = () => setPathname(window.location.pathname);
+    window.addEventListener('popstate', onPopState);
+    return () => window.removeEventListener('popstate', onPopState);
+  }, []);
 
   // 1. Check active session cookie + listen to Firebase Auth
   useEffect(() => {
@@ -151,8 +168,15 @@ export default function App() {
       .then((settings) => setDomainSettings(settings))
       .catch(() => {});
 
-    apiFetchBio('nusantarastudio')
-      .then((profile) => setBioProfile(profile))
+    apiFetchBios()
+      .then((profiles) => {
+        if (profiles.length > 0) {
+          setBioProfiles(profiles);
+          setActiveBioHandle((prev) =>
+            profiles.some((p) => p.handle === prev) ? prev : profiles[0].handle
+          );
+        }
+      })
       .catch(() => {});
 
     if (googleUser) {
@@ -312,6 +336,39 @@ export default function App() {
     };
   };
 
+  const handleUpdateLink = async (
+    originalSlug: string,
+    patch: UpdateLinkPayload
+  ): Promise<ShortLinkItem> => {
+    const existing = links.find((l) => l.slug === originalSlug);
+    const updated = await apiUpdateLink(originalSlug, patch);
+
+    if (googleUser && existing?.ownerId === googleUser.uid) {
+      if (updated.slug !== originalSlug) {
+        await deleteShortLinkInFirestore(originalSlug).catch(() => {});
+        await createShortLinkInFirestore({ ...updated, ownerId: googleUser.uid }).catch(() => {});
+      } else {
+        await updateShortLinkInFirestore(originalSlug, {
+          title: updated.title,
+          targetUrl: updated.targetUrl,
+          customDomain: updated.customDomain || '',
+          redirectType: updated.redirectType,
+          isActive: updated.isActive,
+          expiresAt: updated.expiresAt,
+          maxClicks: updated.maxClicks ?? 0,
+          interstitialEnabled: Boolean(updated.interstitialEnabled),
+          hasPassword: updated.hasPassword,
+          safetyStatus: updated.safetyStatus,
+          safetyReason: updated.safetyReason,
+        }).catch(() => {});
+      }
+    }
+
+    setLinks((prev) => prev.map((l) => (l.slug === originalSlug ? updated : l)));
+    refreshAnalytics();
+    return updated;
+  };
+
   const handleToggleActive = async (link: ShortLinkItem) => {
     const nextActive = !link.isActive;
     const updated = await apiUpdateLink(link.slug, { isActive: nextActive });
@@ -332,61 +389,108 @@ export default function App() {
     refreshAnalytics();
   };
 
-  // Bio handlers
-  const handleSaveBio = async (payload: {
+  // Unlimited Multi-Bio handlers
+  const handleCreateBio = async (payload: {
+    handle: string;
     displayName: string;
-    bio: string;
-    theme: BioTheme;
-    templateId: BioTemplateId;
-    customDomain: string;
-    items: BioLinkEntry[];
+    bio?: string;
+    templateId?: BioTemplateId;
+    theme?: BioTheme;
   }) => {
+    const created = await apiCreateBio(payload);
+    if (googleUser) {
+      await upsertBioInFirestore(googleUser.uid, created).catch(() => {});
+    }
+    setBioProfiles((prev) => [created, ...prev.filter((p) => p.handle !== created.handle)]);
+    setActiveBioHandle(created.handle);
+  };
+
+  const handleDeleteBio = async (handle: string) => {
+    await apiDeleteBio(handle);
+    setBioProfiles((prev) => {
+      const remaining = prev.filter((p) => p.handle !== handle);
+      const next = remaining.length > 0 ? remaining : [DEFAULT_BIO_PROFILE];
+      setActiveBioHandle((cur) => (cur === handle ? next[0].handle : cur));
+      return next;
+    });
+  };
+
+  const handleSaveBio = async (
+    currentHandle: string,
+    payload: {
+      newHandle?: string;
+      displayName: string;
+      bio: string;
+      theme: BioTheme;
+      templateId: BioTemplateId;
+      customDomain: string;
+      avatarUrl: string;
+      backgroundImageUrl: string;
+      backgroundOverlay: BioBackgroundOverlay;
+      items: BioLinkEntry[];
+    }
+  ) => {
     setBioSaving(true);
     try {
-      const updated = await apiSaveBio(bioProfile.handle, payload);
+      const updated = await apiSaveBio(currentHandle, payload);
       if (googleUser) {
         await upsertBioInFirestore(googleUser.uid, {
-          handle: bioProfile.handle,
           ...payload,
+          handle: updated.handle,
         }).catch(() => {});
       }
-      setBioProfile(updated);
+      setBioProfiles((prev) => prev.map((p) => (p.handle === currentHandle ? updated : p)));
+      setActiveBioHandle(updated.handle);
     } finally {
       setBioSaving(false);
     }
   };
 
-  const handleBioItemClick = (itemId: string) => {
-    apiRecordBioClick(bioProfile.handle, itemId);
+  const handleBioItemClick = (handle: string, itemId: string) => {
+    apiRecordBioClick(handle, itemId);
     if (googleUser) {
-      recordBioClickInFirestore(bioProfile.handle, itemId);
+      recordBioClickInFirestore(handle, itemId);
     }
-    setBioProfile((prev) => ({
-      ...prev,
-      items: prev.items.map((item) =>
-        item.id === itemId ? { ...item, clicks: item.clicks + 1 } : item
-      ),
-    }));
+    setBioProfiles((prev) =>
+      prev.map((p) =>
+        p.handle === handle
+          ? {
+              ...p,
+              items: p.items.map((item) =>
+                item.id === itemId ? { ...item, clicks: item.clicks + 1 } : item
+              ),
+            }
+          : p
+      )
+    );
   };
 
-  // Public Standalone Routes: /s/:slug and /u/:handle (always public without dashboard login)
+  // Public Standalone Routes: /s/:slug, /u/:handle, AND custom-domain root /:slug
+  // Evaluated BEFORE dashboard session gate so visitors NEVER hit LoginPage on shared or custom-domain links.
   const navigateHome = () => {
     window.history.pushState({}, '', '/');
     setPathname('/');
   };
 
-  if (pathname.startsWith('/s/')) {
-    const slug = pathname.slice(3).split('/')[0];
-    if (slug) {
-      return <RedirectGatePage slug={slug} onBackHome={navigateHome} />;
-    }
+  const currentHostname = typeof window !== 'undefined' ? window.location.hostname : '';
+  const publicRoute = extractPublicRouteFromLocation(pathname, currentHostname, bioProfiles);
+
+  if (publicRoute.kind === 'shortlink') {
+    return (
+      <>
+        <RedirectGatePage slug={publicRoute.slug} onBackHome={navigateHome} />
+        <FeatureHelpWidget currentContext="public-redirect" />
+      </>
+    );
   }
 
-  if (pathname.startsWith('/u/')) {
-    const handle = pathname.slice(3).split('/')[0];
-    if (handle) {
-      return <PublicBioPage handle={handle} onBackHome={navigateHome} />;
-    }
+  if (publicRoute.kind === 'bio') {
+    return (
+      <>
+        <PublicBioPage handle={publicRoute.handle} onBackHome={navigateHome} />
+        <FeatureHelpWidget currentContext="public-bio" />
+      </>
+    );
   }
 
   // Gate Dashboard behind LoginPage until authenticated
@@ -399,7 +503,12 @@ export default function App() {
   }
 
   if (!sessionUser) {
-    return <LoginPage onLoginSuccess={(u) => setSessionUser(u)} />;
+    return (
+      <>
+        <LoginPage onLoginSuccess={(u) => setSessionUser(u)} />
+        <FeatureHelpWidget currentContext="login" />
+      </>
+    );
   }
 
   const origin = typeof window !== 'undefined' ? window.location.origin : 'https://taut.id';
@@ -438,6 +547,7 @@ export default function App() {
             domainSettings={domainSettings}
             onCreateLink={handleCreateLink}
             onBulkCreateLinks={handleBulkCreateLinks}
+            onUpdateLink={handleUpdateLink}
             onToggleActive={handleToggleActive}
             onDeleteLink={handleDeleteLink}
             onOpenQr={(link) =>
@@ -472,9 +582,13 @@ export default function App() {
 
         {activeTab === 'bio' && (
           <LinkInBioWorkspace
-            profile={bioProfile}
+            profiles={bioProfiles}
+            activeHandle={activeBioHandle}
             domainSettings={domainSettings}
             saving={bioSaving}
+            onSelectProfile={setActiveBioHandle}
+            onCreateProfile={handleCreateBio}
+            onDeleteProfile={handleDeleteBio}
             onSaveProfile={handleSaveBio}
             onOpenQr={(title, url) => setQrModal({ open: true, title, url, vcard: null })}
             onRecordClick={handleBioItemClick}
@@ -531,6 +645,8 @@ export default function App() {
         vcard={qrModal.vcard}
         onClose={() => setQrModal((prev) => ({ ...prev, open: false }))}
       />
+
+      <FeatureHelpWidget currentContext={activeTab as HelpPageContext} />
     </div>
   );
 }

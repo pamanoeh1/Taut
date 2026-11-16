@@ -12,7 +12,7 @@
       "expiresAt": "2026-12-31T12:39:42.212Z",
       "safetyStatus": "safe",
       "safetyReason": "Lolos skrining heuristik phishing, skema, dan domain.",
-      "clickCount": 419,
+      "clickCount": 420,
       "createdAt": "2026-11-10T12:39:42.212Z",
       "updatedAt": "2026-11-16T11:39:42.212Z",
       "customDomain": "",
@@ -55,25 +55,44 @@
       "linkType": "url"
     },
     {
-      "slug": "event-jkt",
+      "slug": "event-jkt-v2",
       "ownerId": "demo-workspace",
       "targetUrl": "https://react.dev/learn",
-      "title": "Registrasi Tech Meetup Jakarta",
+      "title": "Registrasi Tech Meetup Jakarta V2",
       "redirectType": 302,
       "isActive": true,
       "hasPassword": false,
       "passwordHash": "",
-      "expiresAt": "2026-11-30T12:39:42.212Z",
+      "expiresAt": "2026-11-30T12:39:00.000Z",
       "safetyStatus": "safe",
       "safetyReason": "Lolos skrining heuristik phishing, skema, dan domain.",
       "clickCount": 163,
       "createdAt": "2026-11-14T12:39:42.212Z",
-      "updatedAt": "2026-11-16T12:09:42.212Z",
+      "updatedAt": "2026-11-16T16:49:54.667Z",
       "customDomain": "",
-      "linkType": "url"
+      "linkType": "url",
+      "safetyEngine": "VirusTotal + Google Safe Browsing + Heuristik Lokal",
+      "maxClicks": null,
+      "interstitialEnabled": false,
+      "timeRule": null
     }
   ],
   "clicks": [
+    {
+      "id": "clk-1794847695474-dqohl",
+      "ownerId": "demo-workspace",
+      "slug": "promo-desember",
+      "country": "Indonesia",
+      "city": "Jakarta",
+      "device": "Bot",
+      "os": "Automated",
+      "browser": "Crawler",
+      "referer": "Langsung",
+      "routedBy": "default",
+      "latencyMs": 1.16,
+      "cacheHit": true,
+      "createdAt": "2026-11-16T16:48:15.474Z"
+    },
     {
       "id": "clk-1794832886820-89eff",
       "ownerId": "demo-workspace",
@@ -146,7 +165,7 @@
     },
     {
       "ownerId": "demo-workspace",
-      "slug": "event-jkt",
+      "slug": "event-jkt-v2",
       "country": "Indonesia",
       "city": "Jakarta",
       "device": "Desktop",
@@ -202,6 +221,34 @@
     }
   ],
   "bios": [
+    {
+      "handle": "toko-nusantara",
+      "ownerId": "admin",
+      "displayName": "Toko Resmi Nusantara",
+      "bio": "Katalog produk digital & promo terbatas setiap pekan.",
+      "theme": "cobalt",
+      "templateId": "minimal-card",
+      "customDomain": "",
+      "avatarUrl": "/src/assets/images/avatar_bio_creator_1794832316229.jpg",
+      "backgroundImageUrl": "/src/assets/images/avatar_bio_creator_1794832316229.jpg",
+      "backgroundOverlay": "dark",
+      "items": [
+        {
+          "id": "bio-1794847859072",
+          "ownerId": "admin",
+          "title": "Katalog Promo Flash",
+          "url": "https://tokopedia.com/promo-flash",
+          "badge": "HOT",
+          "order": 0,
+          "clicks": 0,
+          "isActive": true,
+          "createdAt": "2026-11-16T16:50:59.072Z",
+          "updatedAt": "2026-11-16T16:51:00.276Z"
+        }
+      ],
+      "createdAt": "2026-11-16T16:50:46.261Z",
+      "updatedAt": "2026-11-16T16:51:00.276Z"
+    },
     {
       "handle": "nusantarastudio",
       "ownerId": "demo-workspace",

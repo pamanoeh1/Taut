@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import {
   ArrowLeft,
   Building2,
@@ -11,6 +11,7 @@ import {
   MapPin,
   Phone,
   ShieldAlert,
+  ShieldCheck,
 } from 'lucide-react';
 import {
   apiFetchLinkBySlug,
@@ -18,6 +19,7 @@ import {
   getVCardHrefOrDataUrl,
 } from '../services/shortlinkStore';
 import type { ShortLinkItem } from '../types/shortlink';
+import { resolveTargetDestination } from '../utils/routingAndUtm';
 
 interface RedirectGatePageProps {
   slug: string;
@@ -33,10 +35,12 @@ export const RedirectGatePage: React.FC<RedirectGatePageProps> = ({ slug, onBack
   const [password, setPassword] = useState('');
   const [unlocking, setUnlocking] = useState(false);
   const [unlockError, setUnlockError] = useState<string | null>(null);
+  const [interstitialCountdown, setInterstitialCountdown] = useState<number>(3);
 
   useEffect(() => {
     let cancelled = false;
     setLoading(true);
+    setErrorMsg(null);
     apiFetchLinkBySlug(slug)
       .then((data) => {
         if (!cancelled) {
@@ -55,6 +59,46 @@ export const RedirectGatePage: React.FC<RedirectGatePageProps> = ({ slug, onBack
       cancelled = true;
     };
   }, [slug]);
+
+  const canAutoRedirect = Boolean(
+    !loading &&
+      link &&
+      link.isActive &&
+      link.safetyStatus !== 'blocked' &&
+      !expired &&
+      !quotaExceeded &&
+      !link.hasPassword &&
+      link.linkType !== 'vcard'
+  );
+
+  const resolvedTarget = useMemo(() => {
+    if (!link) return '';
+    return resolveTargetDestination(link).finalUrl;
+  }, [link]);
+
+  useEffect(() => {
+    if (!canAutoRedirect || !link || !resolvedTarget) return;
+
+    if (link.interstitialEnabled) {
+      setInterstitialCountdown(3);
+      const timer = window.setInterval(() => {
+        setInterstitialCountdown((prev) => {
+          if (prev <= 1) {
+            window.clearInterval(timer);
+            window.location.replace(resolvedTarget);
+            return 0;
+          }
+          return prev - 1;
+        });
+      }, 1000);
+      return () => window.clearInterval(timer);
+    }
+
+    const immediateTimer = window.setTimeout(() => {
+      window.location.replace(resolvedTarget);
+    }, 60);
+    return () => window.clearTimeout(immediateTimer);
+  }, [canAutoRedirect, link, resolvedTarget]);
 
   const handleUnlock = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -75,7 +119,7 @@ export const RedirectGatePage: React.FC<RedirectGatePageProps> = ({ slug, onBack
       <div className="w-full max-w-md bg-white border border-slate-200 rounded-xl p-6 sm:p-8 space-y-5">
         <div className="flex items-center justify-between border-b border-slate-100 pb-4">
           <span className="font-display text-base font-bold text-slate-900">TautKilat</span>
-          <span className="font-mono text-xs text-slate-500">/s/{slug}</span>
+          <span className="font-mono text-xs text-slate-500">/{slug}</span>
         </div>
 
         {loading ? (
@@ -210,14 +254,43 @@ export const RedirectGatePage: React.FC<RedirectGatePageProps> = ({ slug, onBack
               <ExternalLink className="w-4 h-4" aria-hidden="true" />
             </button>
           </form>
-        ) : (
+        ) : link.interstitialEnabled ? (
           <div className="space-y-4">
-            <h1 className="font-display text-lg font-bold text-slate-900">{link.title}</h1>
+            <div className="flex items-center gap-2 text-blue-800">
+              <ShieldCheck className="w-5 h-5" aria-hidden="true" />
+              <h1 className="font-display text-lg font-bold text-slate-900">
+                Anda sedang meninggalkan TautKilat
+              </h1>
+            </div>
+            <p className="text-sm text-slate-600">
+              Mengalihkan otomatis ke <strong>{link.title}</strong> dalam{' '}
+              <span className="font-mono font-bold text-blue-800 tabular-nums">{interstitialCountdown}</span> detik...
+            </p>
+            <div className="p-3 bg-slate-50 border border-slate-200 rounded-lg text-xs font-mono text-blue-800 break-all">
+              {resolvedTarget}
+            </div>
             <a
-              href={link.targetUrl}
+              href={resolvedTarget}
               className="w-full inline-flex items-center justify-center gap-2 px-4 py-2.5 text-sm font-semibold text-white bg-blue-800 hover:bg-blue-900 rounded-lg"
             >
-              <span>Lanjutkan ke Tujuan</span>
+              <span>Lanjutkan Sekarang</span>
+              <ExternalLink className="w-4 h-4" aria-hidden="true" />
+            </a>
+          </div>
+        ) : (
+          <div className="space-y-4">
+            <h1 className="font-display text-lg font-bold text-slate-900">Mengalihkan ke {link.title}...</h1>
+            <p className="text-xs text-slate-600">
+              Anda sedang diteruskan secara otomatis tanpa perlu masuk ke dashboard.
+            </p>
+            <div className="p-3 bg-slate-50 border border-slate-200 rounded-lg text-xs font-mono text-blue-800 break-all">
+              {resolvedTarget}
+            </div>
+            <a
+              href={resolvedTarget}
+              className="w-full inline-flex items-center justify-center gap-2 px-4 py-2.5 text-sm font-semibold text-white bg-blue-800 hover:bg-blue-900 rounded-lg"
+            >
+              <span>Klik di sini jika pengalihan tidak berjalan</span>
               <ExternalLink className="w-4 h-4" aria-hidden="true" />
             </a>
           </div>

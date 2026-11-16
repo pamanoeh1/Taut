@@ -3,6 +3,7 @@ import {
   deleteDoc,
   doc,
   getDoc,
+  getDocs,
   onSnapshot,
   orderBy,
   query,
@@ -19,6 +20,7 @@ import type {
   AnalyticsSummary,
   ApiKeyEntry,
   AuthSessionUser,
+  BioBackgroundOverlay,
   BioLinkEntry,
   BioProfile,
   BioTemplateId,
@@ -28,6 +30,7 @@ import type {
   DomainPlanTier,
   ShortLinkItem,
   TeamMember,
+  UpdateLinkPayload,
   UserRole,
   WebhookConfig,
   WebhookDeliveryLog,
@@ -47,8 +50,19 @@ function resolveApiUrl(path: string): string {
   const configuredBase = String(import.meta.env?.VITE_API_BASE_URL || '')
     .trim()
     .replace(/\/+$/, '');
-  if (configuredBase) {
-    return `${configuredBase}${path.startsWith('/') ? path : `/${path}`}`;
+  const isLocalHost =
+    typeof window !== 'undefined' &&
+    (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1');
+
+  if (configuredBase && !isLocalHost) {
+    try {
+      const parsed = new URL(configuredBase);
+      if (!parsed.hostname.endsWith('github.io')) {
+        return `${configuredBase}${path.startsWith('/') ? path : `/${path}`}`;
+      }
+    } catch {
+      return `${configuredBase}${path.startsWith('/') ? path : `/${path}`}`;
+    }
   }
   const baseUrl = String(import.meta.env?.BASE_URL || '/').trim();
   if (baseUrl && baseUrl !== '/') {
@@ -509,17 +523,58 @@ export async function apiFetchLinkBySlug(slug: string): Promise<{
   expired: boolean;
   quotaExceeded: boolean;
 }> {
+  const normalizedSlug = slug.trim().toLowerCase();
   const res = await requestJsonWithFallback<{
     link?: ShortLinkItem;
     expired?: boolean;
     quotaExceeded?: boolean;
-  }>(`/api/links/${encodeURIComponent(slug)}`, {}, 'Tautan tidak ditemukan.');
-  if (!res.ok || !res.data.link) throw new Error(res.data.error || 'Tautan tidak ditemukan.');
-  return {
-    link: res.data.link,
-    expired: Boolean(res.data.expired),
-    quotaExceeded: Boolean(res.data.quotaExceeded),
-  };
+  }>(`/api/links/${encodeURIComponent(normalizedSlug)}`, {}, 'Tautan tidak ditemukan.');
+
+  if (res.ok && res.data.link) {
+    return {
+      link: res.data.link,
+      expired: Boolean(res.data.expired),
+      quotaExceeded: Boolean(res.data.quotaExceeded),
+    };
+  }
+
+  // Fallback to Cloud Firestore public read (so custom domains or cross-device links resolve even without local state)
+  try {
+    const snap = await getDoc(doc(db, 'shortLinks', normalizedSlug));
+    if (snap.exists()) {
+      const raw = snap.data();
+      const link: ShortLinkItem = {
+        slug: String(raw.slug || normalizedSlug),
+        ownerId: String(raw.ownerId || ''),
+        linkType: raw.linkType === 'vcard' ? 'vcard' : 'url',
+        targetUrl: String(raw.targetUrl || ''),
+        title: String(raw.title || normalizedSlug),
+        customDomain: String(raw.customDomain || ''),
+        redirectType: raw.redirectType === 301 ? 301 : 302,
+        isActive: Boolean(raw.isActive),
+        hasPassword: Boolean(raw.hasPassword),
+        passwordHash: '',
+        expiresAt: String(raw.expiresAt || ''),
+        maxClicks: typeof raw.maxClicks === 'number' && raw.maxClicks > 0 ? raw.maxClicks : null,
+        interstitialEnabled: Boolean(raw.interstitialEnabled),
+        safetyStatus:
+          raw.safetyStatus === 'blocked' || raw.safetyStatus === 'warning'
+            ? raw.safetyStatus
+            : 'safe',
+        safetyReason: String(raw.safetyReason || ''),
+        clickCount: Number(raw.clickCount || 0),
+        createdAt: toIsoString(raw.createdAt),
+        updatedAt: toIsoString(raw.updatedAt),
+      };
+      const expired = Boolean(link.expiresAt && new Date(link.expiresAt).getTime() <= Date.now());
+      const quotaExceeded = Boolean(link.maxClicks && link.maxClicks > 0 && link.clickCount >= link.maxClicks);
+      return { link, expired, quotaExceeded };
+    }
+  } catch {
+    // Ignore Firestore offline/permission fallback errors and raise original not found error
+  }
+
+  throw new Error(res.data.error || 'Tautan tidak ditemukan.');
 }
 
 export async function apiUnlockLink(slug: string, password: string): Promise<string> {
@@ -598,7 +653,7 @@ export async function apiBulkCreateLinks(
 
 export async function apiUpdateLink(
   slug: string,
-  patch: Partial<ShortLinkItem>
+  patch: UpdateLinkPayload
 ): Promise<ShortLinkItem> {
   const res = await requestJsonWithFallback<{ link?: ShortLinkItem }>(
     `/api/links/${encodeURIComponent(slug)}`,
@@ -633,24 +688,110 @@ export async function apiFetchAnalytics(slug?: string): Promise<AnalyticsSummary
   return res.data;
 }
 
-export async function apiFetchBio(handle: string): Promise<BioProfile> {
+export async function apiFetchBios(): Promise<BioProfile[]> {
+  const res = await requestJsonWithFallback<{ profiles?: BioProfile[] }>(
+    '/api/bios',
+    {},
+    'Gagal memuat daftar Link-in-Bio.'
+  );
+  if (!res.ok) throw new Error(res.data.error || 'Gagal memuat daftar Link-in-Bio.');
+  return res.data.profiles || [];
+}
+
+export async function apiCreateBio(payload: {
+  handle: string;
+  displayName: string;
+  bio?: string;
+  theme?: BioTheme;
+  templateId?: BioTemplateId;
+  customDomain?: string;
+  avatarUrl?: string;
+  backgroundImageUrl?: string;
+  backgroundOverlay?: BioBackgroundOverlay;
+  items?: BioLinkEntry[];
+}): Promise<BioProfile> {
   const res = await requestJsonWithFallback<{ profile?: BioProfile }>(
-    `/api/bio/${encodeURIComponent(handle)}`,
+    '/api/bios',
+    {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
+    },
+    'Gagal membuat halaman Link-in-Bio baru.'
+  );
+  if (!res.ok || !res.data.profile) throw new Error(res.data.error || 'Gagal membuat halaman Link-in-Bio baru.');
+  return res.data.profile;
+}
+
+export async function apiFetchBio(handle: string): Promise<BioProfile> {
+  const normalizedHandle = handle.trim().toLowerCase();
+  const res = await requestJsonWithFallback<{ profile?: BioProfile }>(
+    `/api/bio/${encodeURIComponent(normalizedHandle)}`,
     {},
     'Profil Link-in-Bio tidak ditemukan.'
   );
-  if (!res.ok || !res.data.profile) throw new Error(res.data.error || 'Profil Link-in-Bio tidak ditemukan.');
-  return res.data.profile;
+  if (res.ok && res.data.profile) {
+    return res.data.profile;
+  }
+
+  // Fallback to Cloud Firestore public read
+  try {
+    const profileSnap = await getDoc(doc(db, 'bioProfiles', normalizedHandle));
+    if (profileSnap.exists()) {
+      const raw = profileSnap.data();
+      const itemsSnap = await getDocs(
+        query(collection(db, 'bioProfiles', normalizedHandle, 'items'), orderBy('order', 'asc'))
+      );
+      const items: BioLinkEntry[] = itemsSnap.docs.map((d, idx) => {
+        const ir = d.data();
+        return {
+          id: String(ir.id || d.id),
+          ownerId: String(ir.ownerId || raw.ownerId || ''),
+          title: String(ir.title || 'Tautan'),
+          url: String(ir.url || 'https://tautkilat.id'),
+          badge: typeof ir.badge === 'string' ? ir.badge : undefined,
+          order: typeof ir.order === 'number' ? ir.order : idx,
+          clicks: Number(ir.clicks || 0),
+          isActive: Boolean(ir.isActive ?? true),
+          createdAt: toIsoString(ir.createdAt),
+          updatedAt: toIsoString(ir.updatedAt),
+        };
+      });
+      return {
+        handle: String(raw.handle || normalizedHandle),
+        ownerId: String(raw.ownerId || ''),
+        displayName: String(raw.displayName || normalizedHandle),
+        bio: String(raw.bio || ''),
+        theme: (raw.theme as BioTheme) || 'cobalt',
+        templateId: (raw.templateId as BioTemplateId) || 'minimal-card',
+        customDomain: String(raw.customDomain || ''),
+        avatarUrl: typeof raw.avatarUrl === 'string' ? raw.avatarUrl : '',
+        backgroundImageUrl: typeof raw.backgroundImageUrl === 'string' ? raw.backgroundImageUrl : '',
+        backgroundOverlay: (raw.backgroundOverlay as BioBackgroundOverlay) || 'dark',
+        items,
+        createdAt: toIsoString(raw.createdAt),
+        updatedAt: toIsoString(raw.updatedAt),
+      };
+    }
+  } catch {
+    // Ignore Firestore fallback errors
+  }
+
+  throw new Error(res.data.error || 'Profil Link-in-Bio tidak ditemukan.');
 }
 
 export async function apiSaveBio(
   handle: string,
   payload: {
+    newHandle?: string;
     displayName: string;
     bio: string;
     theme: BioTheme;
     templateId?: BioTemplateId;
     customDomain?: string;
+    avatarUrl?: string;
+    backgroundImageUrl?: string;
+    backgroundOverlay?: BioBackgroundOverlay;
     items: BioLinkEntry[];
   }
 ): Promise<BioProfile> {
@@ -665,6 +806,15 @@ export async function apiSaveBio(
   );
   if (!res.ok || !res.data.profile) throw new Error(res.data.error || 'Gagal menyimpan Link-in-Bio.');
   return res.data.profile;
+}
+
+export async function apiDeleteBio(handle: string): Promise<void> {
+  const res = await requestJsonWithFallback(
+    `/api/bio/${encodeURIComponent(handle)}`,
+    { method: 'DELETE' },
+    'Gagal menghapus profil Link-in-Bio.'
+  );
+  if (!res.ok) throw new Error(res.data.error || 'Gagal menghapus profil Link-in-Bio.');
 }
 
 export async function apiRecordBioClick(handle: string, itemId: string): Promise<void> {
@@ -829,7 +979,24 @@ export async function createShortLinkInFirestore(link: ShortLinkItem): Promise<v
 
 export async function updateShortLinkInFirestore(
   slug: string,
-  patch: Partial<Pick<ShortLinkItem, 'title' | 'targetUrl' | 'isActive' | 'redirectType' | 'expiresAt' | 'customDomain'>>
+  patch: Partial<
+    Pick<
+      ShortLinkItem,
+      | 'title'
+      | 'targetUrl'
+      | 'isActive'
+      | 'redirectType'
+      | 'expiresAt'
+      | 'customDomain'
+      | 'linkType'
+      | 'maxClicks'
+      | 'interstitialEnabled'
+      | 'hasPassword'
+      | 'passwordHash'
+      | 'safetyStatus'
+      | 'safetyReason'
+    >
+  >
 ): Promise<void> {
   const path = `shortLinks/${slug}`;
   try {
@@ -851,6 +1018,17 @@ export async function deleteShortLinkInFirestore(slug: string): Promise<void> {
   }
 }
 
+function sanitizeFirestoreImageUrl(url?: string): string {
+  const clean = (url || '').trim();
+  if (!clean) return '';
+  // Never store base64 data URIs in Firestore documents (1MB doc limit & security rules best practice)
+  if (clean.startsWith('data:')) return '';
+  if ((clean.startsWith('https://') || clean.startsWith('http://') || clean.startsWith('/')) && clean.length <= 2048) {
+    return clean;
+  }
+  return '';
+}
+
 export async function upsertBioInFirestore(
   uid: string,
   profile: {
@@ -860,10 +1038,17 @@ export async function upsertBioInFirestore(
     theme: BioTheme;
     templateId?: BioTemplateId;
     customDomain?: string;
+    avatarUrl?: string;
+    backgroundImageUrl?: string;
+    backgroundOverlay?: BioBackgroundOverlay;
     items: BioLinkEntry[];
   }
 ): Promise<void> {
   const profilePath = `bioProfiles/${profile.handle}`;
+  const safeAvatarUrl = sanitizeFirestoreImageUrl(profile.avatarUrl);
+  const safeBgUrl = sanitizeFirestoreImageUrl(profile.backgroundImageUrl);
+  const safeOverlay = profile.backgroundOverlay || 'dark';
+
   try {
     const profileRef = doc(db, 'bioProfiles', profile.handle);
     const snap = await getDoc(profileRef);
@@ -876,6 +1061,9 @@ export async function upsertBioInFirestore(
         theme: profile.theme,
         templateId: profile.templateId || 'minimal-card',
         customDomain: profile.customDomain || '',
+        avatarUrl: safeAvatarUrl,
+        backgroundImageUrl: safeBgUrl,
+        backgroundOverlay: safeOverlay,
         createdAt: serverTimestamp(),
         updatedAt: serverTimestamp(),
       });
@@ -886,6 +1074,9 @@ export async function upsertBioInFirestore(
         theme: profile.theme,
         templateId: profile.templateId || 'minimal-card',
         customDomain: profile.customDomain || '',
+        avatarUrl: safeAvatarUrl,
+        backgroundImageUrl: safeBgUrl,
+        backgroundOverlay: safeOverlay,
         updatedAt: serverTimestamp(),
       });
     }

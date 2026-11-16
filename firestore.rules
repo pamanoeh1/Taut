@@ -111,7 +111,10 @@ service cloud.firestore {
 
     function isValidBioProfile(data, handle) {
       return data.keys().hasAll(['handle', 'ownerId', 'displayName', 'bio', 'theme', 'createdAt', 'updatedAt'])
-        && data.keys().hasOnly(['handle', 'ownerId', 'displayName', 'bio', 'theme', 'templateId', 'customDomain', 'createdAt', 'updatedAt'])
+        && data.keys().hasOnly([
+          'handle', 'ownerId', 'displayName', 'bio', 'theme', 'templateId',
+          'customDomain', 'avatarUrl', 'backgroundImageUrl', 'backgroundOverlay', 'createdAt', 'updatedAt'
+        ])
         && data.handle == handle && isValidBioHandle(data.handle)
         && isValidId(data.ownerId)
         && data.displayName is string && data.displayName.size() >= 1 && data.displayName.size() <= 80
@@ -119,6 +122,9 @@ service cloud.firestore {
         && data.theme in ['slate', 'cobalt', 'emerald', 'amber']
         && (!('templateId' in data) || (data.templateId is string && data.templateId in ['minimal-card', 'creator-grid', 'product-showcase', 'dark-terminal']))
         && (!('customDomain' in data) || (data.customDomain is string && data.customDomain.size() <= 253))
+        && (!('avatarUrl' in data) || (data.avatarUrl is string && data.avatarUrl.size() <= 2048))
+        && (!('backgroundImageUrl' in data) || (data.backgroundImageUrl is string && data.backgroundImageUrl.size() <= 2048))
+        && (!('backgroundOverlay' in data) || (data.backgroundOverlay is string && data.backgroundOverlay in ['dark', 'light', 'none']))
         && data.createdAt is timestamp
         && data.updatedAt is timestamp;
     }
@@ -249,7 +255,8 @@ service cloud.firestore {
         && incoming().createdAt == existing().createdAt
         && incoming().updatedAt == request.time
         && incoming().diff(existing()).affectedKeys().hasOnly([
-          'displayName', 'bio', 'theme', 'templateId', 'customDomain', 'updatedAt'
+          'displayName', 'bio', 'theme', 'templateId', 'customDomain',
+          'avatarUrl', 'backgroundImageUrl', 'backgroundOverlay', 'updatedAt'
         ]);
 
       allow delete: if isVerifiedUser()

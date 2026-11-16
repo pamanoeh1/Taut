@@ -10,6 +10,10 @@ import {
   parseUserAgent,
 } from './src/utils/analyticsParser.ts';
 import { normalizeAndValidateDomain } from './src/utils/customDomain.ts';
+import {
+  isPublicShortlinkCandidatePath,
+  pickBestLinkForHost,
+} from './src/utils/customDomainRouting.ts';
 import { RedirectCache, SlidingWindowRateLimiter } from './src/utils/rateLimiter.ts';
 import {
   buildRedirectBridgeHtml,
@@ -632,7 +636,7 @@ function computeAnalyticsSummary(
 async function startServer() {
   const app = express();
   app.set('trust proxy', true);
-  app.use(express.json({ limit: '512kb' }));
+  app.use(express.json({ limit: '2mb' }));
 
   const state = loadState();
   const redirectCache = new RedirectCache<ShortLinkItem>(2000, 300_000);
@@ -1568,6 +1572,18 @@ async function startServer() {
     const current = state.links[idx];
     const body = req.body || {};
 
+    let nextSlug = current.slug;
+    if (typeof body.newSlug === 'string' && body.newSlug.trim() && body.newSlug.trim().toLowerCase() !== current.slug) {
+      const sCheck = validateSlug(body.newSlug);
+      if (!sCheck.valid) {
+        return res.status(400).json({ error: sCheck.error || 'Slug baru tidak valid.' });
+      }
+      if (state.links.some((l, i) => i !== idx && l.slug === sCheck.normalizedSlug)) {
+        return res.status(409).json({ error: `Slug "${sCheck.normalizedSlug}" sudah digunakan oleh tautan lain.` });
+      }
+      nextSlug = sCheck.normalizedSlug;
+    }
+
     let nextUrl = current.targetUrl;
     let nextSafetyStatus = current.safetyStatus;
     let nextSafetyReason = current.safetyReason;
@@ -1597,11 +1613,24 @@ async function startServer() {
       }
     }
 
+    let nextHasPassword = current.hasPassword;
+    let nextPasswordHash = current.passwordHash;
+    if (body.clearPassword === true) {
+      nextHasPassword = false;
+      nextPasswordHash = '';
+    } else if (typeof body.password === 'string' && body.password.trim()) {
+      nextHasPassword = true;
+      nextPasswordHash = hashPasswordNode(body.password.trim());
+    }
+
     const updated: ShortLinkItem = {
       ...current,
+      slug: nextSlug,
       title: typeof body.title === 'string' && body.title.trim() ? body.title.trim().slice(0, 120) : current.title,
       targetUrl: nextUrl,
       customDomain: nextDomain,
+      hasPassword: nextHasPassword,
+      passwordHash: nextPasswordHash,
       safetyStatus: nextSafetyStatus,
       safetyReason: nextSafetyReason,
       safetyEngine: nextSafetyEngine,
@@ -1618,17 +1647,25 @@ async function startServer() {
       deviceRules: body.deviceRules !== undefined ? body.deviceRules : current.deviceRules,
       abVariants: body.abVariants !== undefined ? body.abVariants : current.abVariants,
       timeRule: body.timeRule !== undefined ? body.timeRule : current.timeRule,
+      vcard: body.vcard !== undefined ? body.vcard : current.vcard,
       updatedAt: new Date().toISOString(),
     };
 
+    if (nextSlug !== slug) {
+      redirectCache.invalidate(slug);
+      for (const click of state.clicks) {
+        if (click.slug === slug) click.slug = nextSlug;
+      }
+    }
+
     state.links[idx] = updated;
     if (updated.isActive) {
-      redirectCache.set(slug, updated);
+      redirectCache.set(updated.slug, updated);
     } else {
-      redirectCache.invalidate(slug);
+      redirectCache.invalidate(updated.slug);
     }
     saveState(state);
-    return res.json({ link: updated });
+    return res.json({ link: updated, previousSlug: slug });
   });
 
   app.delete('/api/links/:slug', requireSession, (req, res) => {
@@ -1714,7 +1751,90 @@ async function startServer() {
     res.json(computeAnalyticsSummary(state, redirectCache, slug));
   });
 
-  // Link-in-Bio Endpoints
+  // Link-in-Bio Endpoints (Unlimited Multi-Profile + Full Edit)
+  app.get('/api/bios', requireSession, (_req, res) => {
+    const profiles = [...state.bios].sort((a, b) => b.updatedAt.localeCompare(a.updatedAt));
+    return res.json({ profiles });
+  });
+
+  app.post('/api/bios', requireSession, (req: AuthenticatedRequest, res) => {
+    const {
+      handle,
+      displayName,
+      bio,
+      theme,
+      templateId,
+      customDomain,
+      avatarUrl,
+      backgroundImageUrl,
+      backgroundOverlay,
+      items,
+    } = req.body || {};
+
+    const handleCheck = validateSlug(String(handle || ''));
+    if (!handleCheck.valid) {
+      return res.status(400).json({ error: handleCheck.error || 'Handle bio tidak valid.' });
+    }
+    const cleanHandle = handleCheck.normalizedSlug;
+    if (state.bios.some((b) => b.handle.toLowerCase() === cleanHandle)) {
+      return res.status(409).json({ error: `Handle "/u/${cleanHandle}" sudah digunakan.` });
+    }
+    if (!displayName || typeof displayName !== 'string' || !displayName.trim()) {
+      return res.status(400).json({ error: 'Nama tampilan profil wajib diisi.' });
+    }
+
+    const nowIso = new Date().toISOString();
+    const validTemplate = ['minimal-card', 'creator-grid', 'product-showcase', 'dark-terminal'].includes(
+      templateId
+    )
+      ? templateId
+      : 'minimal-card';
+
+    const cleanItems: BioLinkEntry[] = Array.isArray(items)
+      ? items
+          .filter((item) => item && typeof item.title === 'string' && typeof item.url === 'string')
+          .slice(0, 30)
+          .map((item, idx) => {
+            const check = normalizeAndValidateUrl(item.url);
+            return {
+              id: String(item.id || `bio-${Date.now()}-${idx}`),
+              ownerId: req.sessionUser?.username || 'demo-workspace',
+              title: item.title.trim().slice(0, 80),
+              url: check.valid ? check.normalizedUrl : 'https://example.com',
+              badge: typeof item.badge === 'string' ? item.badge.trim().slice(0, 32) : undefined,
+              order: idx,
+              clicks: Number(item.clicks || 0),
+              isActive: Boolean(item.isActive ?? true),
+              createdAt: item.createdAt || nowIso,
+              updatedAt: nowIso,
+            };
+          })
+      : [];
+
+    const created: BioProfile = {
+      handle: cleanHandle,
+      ownerId: req.sessionUser?.username || 'demo-workspace',
+      displayName: displayName.trim().slice(0, 80),
+      bio: typeof bio === 'string' ? bio.trim().slice(0, 280) : '',
+      theme: ['slate', 'cobalt', 'emerald', 'amber'].includes(theme) ? theme : 'cobalt',
+      templateId: validTemplate,
+      customDomain: typeof customDomain === 'string' ? customDomain.trim().toLowerCase() : '',
+      avatarUrl:
+        typeof avatarUrl === 'string'
+          ? avatarUrl.trim()
+          : '/src/assets/images/avatar_bio_creator_1794832316229.jpg',
+      backgroundImageUrl: typeof backgroundImageUrl === 'string' ? backgroundImageUrl.trim() : '',
+      backgroundOverlay: ['dark', 'light', 'none'].includes(backgroundOverlay) ? backgroundOverlay : 'dark',
+      items: cleanItems,
+      createdAt: nowIso,
+      updatedAt: nowIso,
+    };
+
+    state.bios.unshift(created);
+    saveState(state);
+    return res.status(201).json({ profile: created });
+  });
+
   app.get('/api/bio/:handle', (req, res) => {
     const handle = req.params.handle.toLowerCase();
     const profile = state.bios.find((b) => b.handle === handle);
@@ -1724,22 +1844,47 @@ async function startServer() {
     return res.json({ profile });
   });
 
-  app.put('/api/bio/:handle', requireSession, (req, res) => {
+  app.put('/api/bio/:handle', requireSession, (req: AuthenticatedRequest, res) => {
     const handle = req.params.handle.toLowerCase();
-    const { displayName, bio, theme, templateId, customDomain, items } = req.body || {};
-    if (!displayName || typeof displayName !== 'string') {
+    const {
+      newHandle,
+      displayName,
+      bio,
+      theme,
+      templateId,
+      customDomain,
+      avatarUrl,
+      backgroundImageUrl,
+      backgroundOverlay,
+      items,
+    } = req.body || {};
+
+    if (!displayName || typeof displayName !== 'string' || !displayName.trim()) {
       return res.status(400).json({ error: 'Nama tampilan tidak boleh kosong.' });
+    }
+
+    const existingIdx = state.bios.findIndex((b) => b.handle === handle);
+    let targetHandle = handle;
+    if (typeof newHandle === 'string' && newHandle.trim() && newHandle.trim().toLowerCase() !== handle) {
+      const handleCheck = validateSlug(newHandle);
+      if (!handleCheck.valid) {
+        return res.status(400).json({ error: handleCheck.error || 'Handle bio baru tidak valid.' });
+      }
+      if (state.bios.some((b, i) => i !== existingIdx && b.handle.toLowerCase() === handleCheck.normalizedSlug)) {
+        return res.status(409).json({ error: `Handle "/u/${handleCheck.normalizedSlug}" sudah digunakan.` });
+      }
+      targetHandle = handleCheck.normalizedSlug;
     }
 
     const cleanItems: BioLinkEntry[] = Array.isArray(items)
       ? items
           .filter((item) => item && typeof item.title === 'string' && typeof item.url === 'string')
-          .slice(0, 20)
+          .slice(0, 30)
           .map((item, idx) => {
             const check = normalizeAndValidateUrl(item.url);
             return {
               id: String(item.id || `bio-${Date.now()}-${idx}`),
-              ownerId: 'demo-workspace',
+              ownerId: req.sessionUser?.username || 'demo-workspace',
               title: item.title.trim().slice(0, 80),
               url: check.valid ? check.normalizedUrl : 'https://example.com',
               badge: typeof item.badge === 'string' ? item.badge.trim().slice(0, 32) : undefined,
@@ -1752,7 +1897,6 @@ async function startServer() {
           })
       : [];
 
-    const existingIdx = state.bios.findIndex((b) => b.handle === handle);
     const nowIso = new Date().toISOString();
     const validTemplate = ['minimal-card', 'creator-grid', 'product-showcase', 'dark-terminal'].includes(
       templateId
@@ -1760,27 +1904,49 @@ async function startServer() {
       ? templateId
       : 'minimal-card';
 
+    const prevProfile = existingIdx >= 0 ? state.bios[existingIdx] : undefined;
     const updated: BioProfile = {
-      handle,
-      ownerId: 'demo-workspace',
+      handle: targetHandle,
+      ownerId: prevProfile?.ownerId || req.sessionUser?.username || 'demo-workspace',
       displayName: displayName.trim().slice(0, 80),
       bio: typeof bio === 'string' ? bio.trim().slice(0, 280) : '',
       theme: ['slate', 'cobalt', 'emerald', 'amber'].includes(theme) ? theme : 'cobalt',
       templateId: validTemplate,
       customDomain: typeof customDomain === 'string' ? customDomain.trim().toLowerCase() : '',
-      avatarUrl: '/src/assets/images/avatar_bio_creator_1794832316229.jpg',
+      avatarUrl:
+        typeof avatarUrl === 'string'
+          ? avatarUrl.trim()
+          : prevProfile?.avatarUrl ?? '/src/assets/images/avatar_bio_creator_1794832316229.jpg',
+      backgroundImageUrl:
+        typeof backgroundImageUrl === 'string'
+          ? backgroundImageUrl.trim()
+          : prevProfile?.backgroundImageUrl ?? '',
+      backgroundOverlay: ['dark', 'light', 'none'].includes(backgroundOverlay)
+        ? backgroundOverlay
+        : prevProfile?.backgroundOverlay ?? 'dark',
       items: cleanItems,
-      createdAt: existingIdx >= 0 ? state.bios[existingIdx].createdAt : nowIso,
+      createdAt: prevProfile?.createdAt || nowIso,
       updatedAt: nowIso,
     };
 
     if (existingIdx >= 0) {
       state.bios[existingIdx] = updated;
     } else {
-      state.bios.push(updated);
+      state.bios.unshift(updated);
     }
     saveState(state);
-    return res.json({ profile: updated });
+    return res.json({ profile: updated, previousHandle: handle });
+  });
+
+  app.delete('/api/bio/:handle', requireSession, (req, res) => {
+    const handle = req.params.handle.toLowerCase();
+    const idx = state.bios.findIndex((b) => b.handle === handle);
+    if (idx === -1) {
+      return res.status(404).json({ error: 'Profil Link-in-Bio tidak ditemukan.' });
+    }
+    state.bios.splice(idx, 1);
+    saveState(state);
+    return res.json({ deleted: true });
   });
 
   app.post('/api/bio/:handle/click', (req, res) => {
@@ -1841,16 +2007,22 @@ async function startServer() {
     return res.status(400).json({ error: 'Aksi tidak dikenal.' });
   });
 
-  // Fast Smart Redirect Engine (/s/:slug)
-  app.get('/s/:slug', async (req, res, next) => {
+  // Fast Smart Redirect Engine (/s/:slug AND custom-domain root /:slug without login)
+  const servePublicShortlinkRedirect = async (
+    rawSlug: string,
+    req: Request,
+    res: Response,
+    next: NextFunction
+  ) => {
     const start = performance.now();
-    const slug = req.params.slug.toLowerCase();
+    const slug = rawSlug.toLowerCase();
+    const reqHost = req.hostname || String(req.headers.host || '').split(':')[0];
 
     let link = redirectCache.get(slug);
     let cacheHit = Boolean(link);
 
     if (!link) {
-      link = state.links.find((l) => l.slug === slug);
+      link = pickBestLinkForHost(state.links, slug, reqHost);
       if (!link && fbConfig) {
         const remote = await fetchShortLinkFromFirestoreRest(slug, fbConfig);
         if (remote) link = remote;
@@ -1963,6 +2135,17 @@ async function startServer() {
     }
 
     return res.redirect(link.redirectType, resolved.finalUrl);
+  };
+
+  app.get('/s/:slug', (req, res, next) => {
+    void servePublicShortlinkRedirect(req.params.slug, req, res, next);
+  });
+
+  app.get('/:slug', (req, res, next) => {
+    if (!isPublicShortlinkCandidatePath(req.path)) {
+      return next();
+    }
+    return void servePublicShortlinkRedirect(req.params.slug, req, res, next);
   });
 
   if (process.env.NODE_ENV !== 'production') {

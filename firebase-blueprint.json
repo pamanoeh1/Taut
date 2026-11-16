@@ -272,6 +272,20 @@
           "minLength": 0,
           "maxLength": 253
         },
+        "avatarUrl": {
+          "type": "string",
+          "minLength": 0,
+          "maxLength": 2048
+        },
+        "backgroundImageUrl": {
+          "type": "string",
+          "minLength": 0,
+          "maxLength": 2048
+        },
+        "backgroundOverlay": {
+          "type": "string",
+          "enum": ["dark", "light", "none"]
+        },
         "createdAt": {
           "type": "string",
           "format": "date-time"

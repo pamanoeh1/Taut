@@ -184,6 +184,8 @@ export interface BioLinkEntry {
   updatedAt: string;
 }
 
+export type BioBackgroundOverlay = 'dark' | 'light' | 'none';
+
 export interface BioProfile {
   handle: string;
   ownerId: string;
@@ -193,6 +195,8 @@ export interface BioProfile {
   templateId?: BioTemplateId;
   customDomain?: string;
   avatarUrl?: string;
+  backgroundImageUrl?: string;
+  backgroundOverlay?: BioBackgroundOverlay;
   items: BioLinkEntry[];
   createdAt: string;
   updatedAt: string;
@@ -217,6 +221,12 @@ export interface CreateLinkPayload {
   abVariants?: AbVariantRule[];
   timeRule?: TimeRouteRule | null;
   vcard?: VCardData | null;
+}
+
+export interface UpdateLinkPayload extends Partial<ShortLinkItem> {
+  newSlug?: string;
+  password?: string;
+  clearPassword?: boolean;
 }
 
 export interface BulkCreateRowResult {

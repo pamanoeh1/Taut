@@ -409,6 +409,19 @@ export const SettingsWorkspace: React.FC<SettingsWorkspaceProps> = ({
             </div>
           </div>
 
+          <div className="p-3.5 bg-blue-50/70 border border-blue-200 rounded-lg text-xs text-slate-700 space-y-1">
+            <p className="font-semibold text-blue-900">Cara Kerja Routing Custom Domain:</p>
+            <p>
+              1. Domain pihak ketiga yang belum mengarahkan DNS (<code className="font-mono">CNAME</code> /{' '}
+              <code className="font-mono">A Record</code>) ke server TautKilat tidak dapat memproses redirect secara otomatis.
+            </p>
+            <p>
+              2. Apabila domain sudah diarahkan ke server TautKilat yang sama (seperti Parked/Addon Domain di hosting Anda),
+              pengunjung yang membuka <code className="font-mono">https://domainanda.com/slug</code> atau{' '}
+              <code className="font-mono">/s/slug</code> akan <strong>langsung diteruskan ke URL tujuan tanpa halaman login</strong>.
+            </p>
+          </div>
+
           <form onSubmit={handleLinkDomain} className="grid grid-cols-1 sm:grid-cols-12 gap-3 items-end">
             <div className="sm:col-span-5">
               <label htmlFor="custom-domain-input" className="block text-xs font-semibold text-slate-700 mb-1.5">
